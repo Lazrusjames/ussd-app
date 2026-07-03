@@ -38,13 +38,13 @@ app.post('/ussd', (req, res) => {
         response = `END Your phone number is ${phoneNumber}`;
     } else if ( text == '1*1') {
         // This is a second level response where the user selected 1 in the first instance
-        const accountNumber = 'ACC100101';
+        const accountNumber = '+265880095866';
         // This is a terminal request. Note how we start the response with END
         response = `END Your account number is ${accountNumber}`;
     }
 
     // Send the response back to the API
-    res.set('Content-Type: text/plain');
+    res.set('Content-Type', 'text/plain');
     res.send(response);
 });
 
