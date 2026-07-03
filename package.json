@@ -1,0 +1,22 @@
+{
+  "name": "ussd-app",
+  "version": "1.0.0",
+  "description": "ussd app for publishing apis",
+  "type": "module",
+  "main": "app",
+  "scripts": {
+    "dev": "nodemon app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "africastalking": "^0.7.4",
+    "body-parser": "^2.3.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "mongoose": "^9.7.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
