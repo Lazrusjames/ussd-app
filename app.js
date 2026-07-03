@@ -12,15 +12,6 @@ app.get('/', (req, res) => {
 })
 
 
-app.get('/ussd', (req, res) => {
-    // Read the variables sent via GET from our API
-    res.send('Welcome to the USSD app! Please use POST method to interact with the USSD service.');
-
-
-
-
-    })
-
 app.post('/ussd', (req, res) => {
     // Read the variables sent via POST from our API
     const {
