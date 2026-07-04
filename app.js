@@ -1,56 +1,169 @@
 import express from 'express';
-import bodyParser from 'body-parser';
-
 const app = express();
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: false }));
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-//Testing the server
-app.get('/', (req, res) => {
-    res.send('Welcome to the USSD app!');
-})
+// --- MOCK IN-MEMORY REDIS REPLACEMENT ---
+// In production, swap this object out for a real Redis store to maintain statelessness across servers.
+const sessionStore = {};
 
+const saveSession = (sessionId, data) => {
+    sessionStore[sessionId] = { ...sessionStore[sessionId], ...data };
+};
 
+const getSession = (sessionId) => sessionStore[sessionId] || {};
+
+const clearSession = (sessionId) => {
+    delete sessionStore[sessionId];
+};
+
+// --- MOCK CONSTANT DATA ---
+const CROP_PRICES = {
+    beans: "2,400 MWK",
+    maize: "850 MWK",
+    soya: "1,100 MWK"
+};
+
+const HUBS = { "1": "Lilongwe (Mitundu)", "2": "Blantyre (Limbe)", "3": "Zomba", "4": "Mzuzu" };
+const CROPS = { "1": "Beans", "2": "Maize", "3": "Soya" };
+const REGIONS = { "1": "Central", "2": "Southern", "3": "Northern" };
+
+// --- MAIN USSD ROUTE ---
 app.post('/ussd', (req, res) => {
-    // Read the variables sent via POST from our API
-    const {
-        sessionId,
-        serviceCode,
-        phoneNumber,
-        text,
-    } = req.body;
+    // Read parameters sent from the gateway webhook (Africa's Talking format)
+    const { sessionId, serviceCode, phoneNumber, text } = req.body;
 
-    let response = '';
+    let response = "";
 
-    if (text == '') {
-        // This is the first request. Note how we start the response with CON
-        response = `CON What would you like to check
-        1. My account
-        2. My phone number`;
-    } else if ( text == '1') {
-        // Business logic for first level response
-        response = `CON Choose account information you want to view
-        1. Account number`;
-    } else if ( text == '2') {
-        // Business logic for first level response
-        // This is a terminal request. Note how we start the response with END
-        response = `END Your phone number is ${phoneNumber}`;
-    } else if ( text == '1*1') {
-        // This is a second level response where the user selected 1 in the first instance
-        const accountNumber = '+265880095866';
-        // This is a terminal request. Note how we start the response with END
-        response = `END Your account number is ${accountNumber}`;
+    // The text variable contains accumulated inputs separated by asterisks (e.g., "2*1*1*45")
+    // If it's empty, the user just dialed the root shortcode.
+    const textSegments = text ? text.split('*') : [];
+    const stepCount = textSegments.length;
+
+    // Fetch or initialize session memory
+    let currentSession = getSession(sessionId);
+
+    // ROOT MENU
+    if (stepCount === 0) {
+        response = `CON Fenice Agri-Market\n1. Check Market Prices\n2. Sell Produce`;
+    } 
+    
+    // --- PATH 1: CHECK MARKET PRICES ---
+    else if (textSegments[0] === '1') {
+        if (stepCount === 1) {
+            response = `CON Select Hub:\n1. Lilongwe (Mitundu)\n2. Blantyre (Limbe)\n3. Zomba\n4. Mzuzu\n0. Back`;
+        } else if (stepCount === 2) {
+            const hubSelection = textSegments[1];
+            
+            if (hubSelection === '0') {
+                // User chose Back -> Reset text tracking path back to root parameters
+                response = `CON Limbe Agri-Market\n1. Check Market Prices\n2. Sell Produce`;
+            } else if (HUBS[hubSelection]) {
+                response = `END Current Prices/KG at ${HUBS[hubSelection]}:\n- Beans: ${CROP_PRICES.beans}\n- Maize: ${CROP_PRICES.maize}\n- Soya: ${CROP_PRICES.soya}\nPrices updated today 6 AM.`;
+                clearSession(sessionId); // Housekeeping
+            } else {
+                response = `END Invalid selection. Session terminated.`;
+                clearSession(sessionId);
+            }
+        }
+    } 
+    
+    // --- PATH 2: SELL PRODUCE ---
+    else if (textSegments[0] === '2') {
+        switch (stepCount) {
+            case 1: // Select Crop Type
+                response = `CON What are you selling?\n1. Beans\n2. Maize\n3. Soya\n0. Back`;
+                break;
+
+            case 2: // Handle Crop Selection & Show Regions
+                const cropSelection = textSegments[1];
+                if (cropSelection === '0') {
+                    response = `CON Limbe Agri-Market\n1. Check Market Prices\n2. Sell Produce`;
+                } else if (CROPS[cropSelection]) {
+                    saveSession(sessionId, { crop: CROPS[cropSelection] });
+                    response = `CON Select your location:\n1. Central Region\n2. Southern Region\n3. Northern Region\n0. Back`;
+                } else {
+                    response = `END Invalid selection.`;
+                    clearSession(sessionId);
+                }
+                break;
+
+            case 3: // Handle Region Selection & Ask for Quantity
+                const regionSelection = textSegments[2];
+                if (regionSelection === '0') {
+                    response = `CON What are you selling?\n1. Beans\n2. Maize\n3. Soya\n0. Back`;
+                } else if (REGIONS[regionSelection]) {
+                    saveSession(sessionId, { region: REGIONS[regionSelection] });
+                    response = `CON Enter estimated quantity\n(In 50KG bags):`;
+                } else {
+                    response = `END Invalid selection.`;
+                    clearSession(sessionId);
+                }
+                break;
+
+            case 4: // Handle Quantity Input & Show Confirmation Screen
+                const quantityInput = textSegments[3];
+                // Lightweight numeric check
+                if (!isNaN(quantityInput) && parseInt(quantityInput) > 0) {
+                    saveSession(sessionId, { quantity: parseInt(quantityInput) });
+                    
+                    // Fetch state fields from our session memory
+                    const sessionData = getSession(sessionId);
+
+                    response = `CON Confirm Sale:\nCrop: ${sessionData.crop}\nLoc: ${sessionData.region}\nQty: ${quantityInput} Bags\n1. Confirm & Submit\n2. Cancel`;
+                } else {
+                    response = `END Invalid quantity format. Please type a valid number.`;
+                    clearSession(sessionId);
+                }
+                break;
+
+            case 5: // Process Submission or Cancellation
+                const finalAction = textSegments[4];
+                if (finalAction === '1') {
+                    const sessionData = getSession(sessionId);
+
+                    // --- ASYNC DESIGN PATTERN ---
+                    // Fire background processes immediately without blocking the client response execution cycle.
+                    processAgriSaleBackgroundJob(phoneNumber, sessionData)
+                        .catch(err => console.error("Background job failed: ", err));
+
+                    response = `END Request Logged!\nAgro-dealers in your area will contact you shortly via call or SMS. Thank you.`;
+                } else {
+                    response = `END Sale cancelled successfully.`;
+                }
+                clearSession(sessionId); // Clean up cache memory bucket
+                break;
+
+            default:
+                response = `END Invalid state routing.`;
+                clearSession(sessionId);
+                break;
+        }
+    } else {
+        response = `END Option not recognized.`;
+        clearSession(sessionId);
     }
 
-    // Send the response back to the API
+    // Set the response header type precisely to text/plain as expected by USSD gateways
     res.set('Content-Type', 'text/plain');
     res.send(response);
 });
 
-// Start the server
+// --- ASYNCHRONOUS WORKER SIMULATION ---
+async function processAgriSaleBackgroundJob(phone, data) {
+    // Simulate web service API call or heavy DB write (~500ms lag)
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            console.log(`[Worker Sync Logged] -> Farmer Phone: ${phone} | Crop Type: ${data.crop} | Region Location: ${data.region} | Quantity Volume: ${data.quantity} Bags.`);
+            // Here is where your fetch() payload calls to an external database microservice would execute
+            resolve(true);
+        }, 500);
+    });
+}
+
+// Start Server Configuration
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`USSD Engine operating seamlessly on system port ${PORT}`);
 });
-
