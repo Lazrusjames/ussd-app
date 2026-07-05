@@ -1,5 +1,16 @@
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 const app = express();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const loadJsonData = (fileName) => {
+    const filePath = path.join(__dirname, 'data', fileName);
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+};
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -18,16 +29,12 @@ const clearSession = (sessionId) => {
     delete sessionStore[sessionId];
 };
 
-// --- MOCK CONSTANT DATA ---
-const CROP_PRICES = {
-    beans: "2,400 MWK",
-    maize: "850 MWK",
-    soya: "1,100 MWK"
-};
-
-const HUBS = { "1": "Lilongwe (Mitundu)", "2": "Blantyre (Limbe)", "3": "Zomba", "4": "Mzuzu" };
-const CROPS = { "1": "Beans", "2": "Maize", "3": "Soya" };
-const REGIONS = { "1": "Central", "2": "Southern", "3": "Northern" };
+// --- MOCK DATA LOADED FROM JSON FILES ---
+const CROP_PRICES = loadJsonData('crop-prices.json');
+const HUBS = loadJsonData('hubs.json');
+const CROPS = loadJsonData('crops.json');
+const REGIONS = loadJsonData('regions.json');
+const MOCK_SALES = loadJsonData('mock-sales.json');
 
 // --- MAIN USSD ROUTE ---
 app.post('/ussd', (req, res) => {
@@ -58,7 +65,7 @@ app.post('/ussd', (req, res) => {
             
             if (hubSelection === '0') {
                 // User chose Back -> Reset text tracking path back to root parameters
-                response = `CON Limbe Agri-Market\n1. Check Market Prices\n2. Sell Produce`;
+                response = `CON Fenice Agri-Market\n1. Check Market Prices\n2. Sell Produce`;
             } else if (HUBS[hubSelection]) {
                 response = `END Current Prices/KG at ${HUBS[hubSelection]}:\n- Beans: ${CROP_PRICES.beans}\n- Maize: ${CROP_PRICES.maize}\n- Soya: ${CROP_PRICES.soya}\nPrices updated today 6 AM.`;
                 clearSession(sessionId); // Housekeeping
@@ -79,7 +86,7 @@ app.post('/ussd', (req, res) => {
             case 2: // Handle Crop Selection & Show Regions
                 const cropSelection = textSegments[1];
                 if (cropSelection === '0') {
-                    response = `CON Limbe Agri-Market\n1. Check Market Prices\n2. Sell Produce`;
+                    response = `CON Fenice Agri-Market\n1. Check Market Prices\n2. Sell Produce`;
                 } else if (CROPS[cropSelection]) {
                     saveSession(sessionId, { crop: CROPS[cropSelection] });
                     response = `CON Select your location:\n1. Central Region\n2. Southern Region\n3. Northern Region\n0. Back`;
