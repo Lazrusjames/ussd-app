@@ -12,6 +12,31 @@ const loadJsonData = (fileName) => {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 };
 
+const SALES_DATA_FILE = path.join(__dirname, 'data', 'mock-sales.json');
+
+const ensureSalesFile = (filePath = SALES_DATA_FILE) => {
+    if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, '[]', 'utf8');
+    }
+};
+
+const readMockSales = (filePath = SALES_DATA_FILE) => {
+    ensureSalesFile(filePath);
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+};
+
+const writeMockSales = (sales, filePath = SALES_DATA_FILE) => {
+    ensureSalesFile(filePath);
+    fs.writeFileSync(filePath, JSON.stringify(sales, null, 2), 'utf8');
+    return sales;
+};
+
+const appendMockSale = (sale, filePath = SALES_DATA_FILE) => {
+    const sales = readMockSales(filePath);
+    const updatedSales = [...sales, sale];
+    return writeMockSales(updatedSales, filePath);
+};
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -34,7 +59,7 @@ const CROP_PRICES = loadJsonData('crop-prices.json');
 const HUBS = loadJsonData('hubs.json');
 const CROPS = loadJsonData('crops.json');
 const REGIONS = loadJsonData('regions.json');
-const MOCK_SALES = loadJsonData('mock-sales.json');
+let MOCK_SALES = readMockSales();
 
 // --- MAIN USSD ROUTE ---
 app.post('/ussd', (req, res) => {
@@ -162,6 +187,17 @@ async function processAgriSaleBackgroundJob(phone, data) {
     // Simulate web service API call or heavy DB write (~500ms lag)
     return new Promise((resolve) => {
         setTimeout(() => {
+            const sale = {
+                id: `sale-${Date.now()}`,
+                phoneNumber: phone,
+                crop: data.crop,
+                region: data.region,
+                quantity: data.quantity,
+                status: 'pending',
+                submittedAt: new Date().toISOString()
+            };
+
+            MOCK_SALES = appendMockSale(sale);
             console.log(`[Worker Sync Logged] -> Farmer Phone: ${phone} | Crop Type: ${data.crop} | Region Location: ${data.region} | Quantity Volume: ${data.quantity} Bags.`);
             // Here is where your fetch() payload calls to an external database microservice would execute
             resolve(true);
@@ -171,6 +207,10 @@ async function processAgriSaleBackgroundJob(phone, data) {
 
 // Start Server Configuration
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => {
-    console.log(`USSD Engine operating seamlessly on system port ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, () => {
+        console.log(`USSD Engine operating seamlessly on system port ${PORT}`);
+    });
+}
+
+export { app, appendMockSale, readMockSales, writeMockSales };
