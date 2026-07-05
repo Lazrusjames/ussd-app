@@ -207,10 +207,13 @@ async function processAgriSaleBackgroundJob(phone, data) {
 
 // Start Server Configuration
 const PORT = process.env.PORT || 8000;
-if (process.env.NODE_ENV !== 'test') {
+const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === __filename;
+
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL && isDirectRun) {
     app.listen(PORT, () => {
         console.log(`USSD Engine operating seamlessly on system port ${PORT}`);
     });
 }
 
 export { app, appendMockSale, readMockSales, writeMockSales };
+export default app;
