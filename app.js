@@ -19,8 +19,7 @@ const GROUPS = loadJsonData('groups.json');
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- MOCK IN-MEMORY REDIS REPLACEMENT ---
-// In production, swap this object out for a real Redis store to maintain statelessness across servers.
+// --- code for speed ---
 const sessionStore = {};
 
 const saveSession = (sessionId, data) => {
