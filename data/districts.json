@@ -229,5 +229,82 @@
       "Sunday 6-8 PM"
     ],
     "averageDuration": "1.5 hours"
+  },
+  "22": {
+    "id": "22",
+    "name": "Mzimba",
+    "region": "Northern",
+    "group": "B",
+    "outageSchedule": [
+      "Monday 6-8 PM",
+      "Friday 2-4 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "23": {
+    "id": "23",
+    "name": "Likoma",
+    "region": "Northern",
+    "group": "C",
+    "outageSchedule": [
+      "Tuesday 2-4 PM",
+      "Sunday 6-8 PM"
+    ],
+    "averageDuration": "1.5 hours"
+  },
+  "24": {
+    "id": "24",
+    "name": "Nkhotakota",
+    "region": "Central",
+    "group": "D",
+    "outageSchedule": [
+      "Wednesday 2-4 PM",
+      "Saturday 6-8 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "25": {
+    "id": "25",
+    "name": "Ntcheu",
+    "region": "Central",
+    "group": "A",
+    "outageSchedule": [
+      "Thursday 2-4 PM",
+      "Sunday 6-8 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "26": {
+    "id": "26",
+    "name": "Chiradzulu",
+    "region": "Southern",
+    "group": "B",
+    "outageSchedule": [
+      "Monday 2-4 PM",
+      "Thursday 6-8 PM"
+    ],
+    "averageDuration": "1.5 hours"
+  },
+  "27": {
+    "id": "27",
+    "name": "Thyolo",
+    "region": "Southern",
+    "group": "C",
+    "outageSchedule": [
+      "Tuesday 6-8 PM",
+      "Saturday 2-4 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "28": {
+    "id": "28",
+    "name": "Mwanza",
+    "region": "Southern",
+    "group": "D",
+    "outageSchedule": [
+      "Wednesday 6-8 PM",
+      "Friday 2-4 PM"
+    ],
+    "averageDuration": "1.5 hours"
   }
 }
