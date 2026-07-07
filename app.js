@@ -7,7 +7,13 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const loadJsonData = (fileName) => {
+    const filePath = path.join(__dirname, 'data', fileName);
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+};
 
+// --- LOAD POWER MANAGEMENT DATA ---
+const DISTRICTS = loadJsonData('districts.json');
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -32,6 +38,11 @@ const clearSession = (sessionId) => {
 
 
 
+
+// --- GET ALL DISTRICTS API ---
+app.get('/districts', (req, res) => {
+    res.json(DISTRICTS);
+});
 
 // --- MAIN USSD ROUTE ---
 app.post('/ussd', (req, res) => {
@@ -128,8 +139,13 @@ app.post('/ussd', (req, res) => {
                     response = `END Your Recent Outages:\n- Jan 15: 4 hours\n- Jan 10: 3 hours\nTotal this month: 7 hours`;
                     clearSession(sessionId);
                 } else if (outageOption === '2') {
-                    // View by district
-                    response = `CON Select district:\n1. Lilongwe\n2. Blantyre\n3. Zomba\n0. Back`;
+                    // View by district - Build list from DISTRICTS data
+                    let districtOptions = `CON Select district:`;
+                    Object.keys(DISTRICTS).forEach(key => {
+                        districtOptions += `\n${key}. ${DISTRICTS[key].name}`;
+                    });
+                    districtOptions += `\n0. Back`;
+                    response = districtOptions;
                     saveSession(sessionId, { action: 'view_district' });
                 } else if (outageOption === '3') {
                     // View today's schedule
@@ -148,15 +164,21 @@ app.post('/ussd', (req, res) => {
             case 3: // Handle district selection
                 const sessionDataPower = getSession(sessionId);
                 if (sessionDataPower.action === 'view_district') {
-                    const district = textSegments[2];
-                    const districtNames = { '1': 'Lilongwe', '2': 'Blantyre', '3': 'Zomba' };
-                    if (districtNames[district]) {
-                        response = `END Outages in ${districtNames[district]}:\n- Monday 2-4 PM\n- Wednesday 6-8 PM\nAverage duration: 2 hours`;
-                        clearSession(sessionId);
+                    const districtCode = textSegments[2];
+                    if (districtCode === '0') {
+                        response = `CON Power Outages:\n1. My outages\n2. View by district\n3. View today's schedule\n4. View all schedule\n0. Back`;
+                    } else if (DISTRICTS[districtCode]) {
+                        const district = DISTRICTS[districtCode];
+                        let outageInfo = `END Outages in ${district.name}:\n`;
+                        district.outageSchedule.forEach(schedule => {
+                            outageInfo += `- ${schedule}\n`;
+                        });
+                        outageInfo += `Average duration: ${district.averageDuration}`;
+                        response = outageInfo;
                     } else {
-                        response = `END Invalid district.`;
-                        clearSession(sessionId);
+                        response = `END Invalid district selection.`;
                     }
+                    clearSession(sessionId);
                 } else {
                     response = `END Invalid action.`;
                     clearSession(sessionId);

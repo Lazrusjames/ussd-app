@@ -1,0 +1,212 @@
+{
+  "1": {
+    "id": "1",
+    "name": "Lilongwe",
+    "region": "Central",
+    "outageSchedule": [
+      "Monday 2-4 PM",
+      "Wednesday 6-8 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "2": {
+    "id": "2",
+    "name": "Blantyre",
+    "region": "Southern",
+    "outageSchedule": [
+      "Tuesday 2-4 PM",
+      "Thursday 6-8 PM"
+    ],
+    "averageDuration": "2.5 hours"
+  },
+  "3": {
+    "id": "3",
+    "name": "Zomba",
+    "region": "Southern",
+    "outageSchedule": [
+      "Wednesday 2-4 PM",
+      "Friday 6-8 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "4": {
+    "id": "4",
+    "name": "Mzuzu",
+    "region": "Northern",
+    "outageSchedule": [
+      "Thursday 2-4 PM",
+      "Saturday 6-8 PM"
+    ],
+    "averageDuration": "1.5 hours"
+  },
+  "5": {
+    "id": "5",
+    "name": "Kasungu",
+    "region": "Central",
+    "outageSchedule": [
+      "Monday 6-8 PM",
+      "Friday 2-4 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "6": {
+    "id": "6",
+    "name": "Mchinji",
+    "region": "Central",
+    "outageSchedule": [
+      "Tuesday 6-8 PM",
+      "Thursday 2-4 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "7": {
+    "id": "7",
+    "name": "Dowa",
+    "region": "Central",
+    "outageSchedule": [
+      "Monday 2-4 PM",
+      "Friday 6-8 PM"
+    ],
+    "averageDuration": "1.5 hours"
+  },
+  "8": {
+    "id": "8",
+    "name": "Salima",
+    "region": "Central",
+    "outageSchedule": [
+      "Wednesday 2-4 PM",
+      "Saturday 6-8 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "9": {
+    "id": "9",
+    "name": "Ntchisi",
+    "region": "Central",
+    "outageSchedule": [
+      "Tuesday 2-4 PM",
+      "Friday 6-8 PM"
+    ],
+    "averageDuration": "1.5 hours"
+  },
+  "10": {
+    "id": "10",
+    "name": "Dedza",
+    "region": "Central",
+    "outageSchedule": [
+      "Thursday 2-4 PM",
+      "Saturday 6-8 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "11": {
+    "id": "11",
+    "name": "Mangochi",
+    "region": "Southern",
+    "outageSchedule": [
+      "Monday 6-8 PM",
+      "Thursday 2-4 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "12": {
+    "id": "12",
+    "name": "Machinga",
+    "region": "Southern",
+    "outageSchedule": [
+      "Tuesday 2-4 PM",
+      "Friday 6-8 PM"
+    ],
+    "averageDuration": "2.5 hours"
+  },
+  "13": {
+    "id": "13",
+    "name": "Nsanje",
+    "region": "Southern",
+    "outageSchedule": [
+      "Wednesday 6-8 PM",
+      "Saturday 2-4 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "14": {
+    "id": "14",
+    "name": "Chikwawa",
+    "region": "Southern",
+    "outageSchedule": [
+      "Monday 2-4 PM",
+      "Thursday 6-8 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "15": {
+    "id": "15",
+    "name": "Mulanje",
+    "region": "Southern",
+    "outageSchedule": [
+      "Tuesday 6-8 PM",
+      "Saturday 2-4 PM"
+    ],
+    "averageDuration": "2.5 hours"
+  },
+  "16": {
+    "id": "16",
+    "name": "Neno",
+    "region": "Southern",
+    "outageSchedule": [
+      "Wednesday 2-4 PM",
+      "Friday 6-8 PM"
+    ],
+    "averageDuration": "1.5 hours"
+  },
+  "17": {
+    "id": "17",
+    "name": "Balaka",
+    "region": "Southern",
+    "outageSchedule": [
+      "Thursday 6-8 PM",
+      "Sunday 2-4 PM"
+    ],
+    "averageDuration": "2 hours"
+  },
+  "18": {
+    "id": "18",
+    "name": "Chitipa",
+    "region": "Northern",
+    "outageSchedule": [
+      "Monday 2-4 PM",
+      "Saturday 6-8 PM"
+    ],
+    "averageDuration": "1.5 hours"
+  },
+  "19": {
+    "id": "19",
+    "name": "Karonga",
+    "region": "Northern",
+    "outageSchedule": [
+      "Tuesday 2-4 PM",
+      "Saturday 6-8 PM"
+    ],
+    "averageDuration": "1.5 hours"
+  },
+  "20": {
+    "id": "20",
+    "name": "Nkhata Bay",
+    "region": "Northern",
+    "outageSchedule": [
+      "Wednesday 2-4 PM",
+      "Sunday 6-8 PM"
+    ],
+    "averageDuration": "1.5 hours"
+  },
+  "21": {
+    "id": "21",
+    "name": "Rumphi",
+    "region": "Northern",
+    "outageSchedule": [
+      "Thursday 2-4 PM",
+      "Sunday 6-8 PM"
+    ],
+    "averageDuration": "1.5 hours"
+  }
+}
