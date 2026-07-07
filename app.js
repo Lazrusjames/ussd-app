@@ -64,6 +64,28 @@ app.get('/outages', (req, res) => {
     res.json(outagesByDistrict);
 });
 
+// --- GET POWER OUTAGES FOR A SPECIFIC DISTRICT API ---
+app.get('/outages/:district', (req, res) => {
+    const districtInput = req.params.district.toLowerCase();
+
+    const district = Object.values(DISTRICTS).find((item) => {
+        return item.name.toLowerCase() === districtInput || item.id === districtInput;
+    });
+
+    if (!district) {
+        return res.status(404).json({ message: 'District not found' });
+    }
+
+    res.json({
+        id: district.id,
+        name: district.name,
+        region: district.region,
+        group: district.group,
+        outageSchedule: district.outageSchedule,
+        averageDuration: district.averageDuration
+    });
+});
+
 // --- MAIN USSD ROUTE ---
 app.post('/ussd', (req, res) => {
 
@@ -199,14 +221,9 @@ app.post('/ussd', (req, res) => {
                     response = `END Your Recent Outages:\n- Jan 15: 4 hours\n- Jan 10: 3 hours\nTotal this month: 7 hours`;
                     clearSession(sessionId);
                 } else if (outageOption === '2') {
-                    // View by district - Build list from DISTRICTS data
-                    let districtOptions = `CON Select district:`;
-                    Object.keys(DISTRICTS).forEach(key => {
-                        districtOptions += `\n${key}. ${DISTRICTS[key].name}`;
-                    });
-                    districtOptions += `\n0. Back`;
-                    response = districtOptions;
-                    saveSession(sessionId, { action: 'view_district' });
+                    // View by district - allow direct district name search
+                    response = `CON Enter district name:`;
+                    saveSession(sessionId, { action: 'search_district' });
                 } else if (outageOption === '3') {
                     // View today's schedule
                     response = `END Today's Outages:\n6:00 AM - 8:00 AM (Area A)\n2:00 PM - 4:00 PM (Area B)\n8:00 PM - 10:00 PM (Area C)`;
@@ -223,20 +240,35 @@ app.post('/ussd', (req, res) => {
 
             case 3: // Handle district selection
                 const sessionDataPower = getSession(sessionId);
-                if (sessionDataPower.action === 'view_district') {
-                    const districtCode = textSegments[2];
-                    if (districtCode === '0') {
+                if (sessionDataPower.action === 'search_district') {
+                    const districtInput = textSegments[2].trim();
+                    if (districtInput === '0') {
                         response = `CON Power Outages:\n1. My outages\n2. View by district\n3. View today's schedule\n4. View all schedule\n0. Back`;
-                    } else if (DISTRICTS[districtCode]) {
-                        const district = DISTRICTS[districtCode];
-                        let outageInfo = `END Outages in ${district.name}:\n`;
-                        district.outageSchedule.forEach(schedule => {
-                            outageInfo += `- ${schedule}\n`;
-                        });
-                        outageInfo += `Average duration: ${district.averageDuration}`;
-                        response = outageInfo;
                     } else {
-                        response = `END Invalid district selection.`;
+                        let district = null;
+
+                        if (DISTRICTS[districtInput]) {
+                            district = DISTRICTS[districtInput];
+                        } else {
+                            const normalizedInput = districtInput.toLowerCase();
+                            for (const key in DISTRICTS) {
+                                if (DISTRICTS[key].name.toLowerCase() === normalizedInput) {
+                                    district = DISTRICTS[key];
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (district) {
+                            let outageInfo = `END Outages in ${district.name}:\n`;
+                            district.outageSchedule.forEach(schedule => {
+                                outageInfo += `- ${schedule}\n`;
+                            });
+                            outageInfo += `Average duration: ${district.averageDuration}`;
+                            response = outageInfo;
+                        } else {
+                            response = `END Invalid district selection.`;
+                        }
                     }
                     clearSession(sessionId);
                 } else {
