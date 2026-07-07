@@ -50,6 +50,20 @@ app.get('/groups', (req, res) => {
     res.json(GROUPS);
 });
 
+// --- GET ALL POWER OUTAGES BY DISTRICT API ---
+app.get('/outages', (req, res) => {
+    const outagesByDistrict = Object.values(DISTRICTS).map((district) => ({
+        id: district.id,
+        name: district.name,
+        region: district.region,
+        group: district.group,
+        outageSchedule: district.outageSchedule,
+        averageDuration: district.averageDuration
+    }));
+
+    res.json(outagesByDistrict);
+});
+
 // --- MAIN USSD ROUTE ---
 app.post('/ussd', (req, res) => {
 
