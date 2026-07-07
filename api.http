@@ -1,4 +1,4 @@
-@baseUrl = http://localhost:8000
+@baseUrl = https://ussd-app-bay.vercel.app/
 
 ### 1) Root USSD menu
 POST {{baseUrl}}/ussd

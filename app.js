@@ -61,14 +61,66 @@ const CROPS = loadJsonData('crops.json');
 const REGIONS = loadJsonData('regions.json');
 let MOCK_SALES = readMockSales();
 
+
+//--Get APP ROUTE FOR TESTING THE APIs
+
+//DEFINING THE URLS FOR THE THE APIS
+const SALES_URL='/sales';
+const CROP_URL='/crops';
+const PRICE_URL='/prices';
+const REGION_URL='/regions';
+const HUBS_URL='/hubs';
+
+
+
+// Viewing the  details of the sales
+
+app.get(SALES_URL,(req,res)=>{
+
+    console.log('Visiting url at 127.0.0.1:8000'+SALES_URL);
+    console.log(req.query)
+    res.send(req.query.id);
+    
+    
+});
+
+//View the details of the crops 
+app.get("/crops",(req,res)=>{
+    console.log('Visiting url at 127.0.0.1:8000'+CROP_URL);
+    
+    res.send(CROPS)
+})
+
+//View the details of the prices
+app.get('/prices',(req,res)=>{
+    console.log('Visiting url at 127.0.0.1:8000'+PRICE_URL);
+    res.send(CROP_PRICES)
+})
+
+
+//View the details of the region
+app.get(REGION_URL,(req,res)=>{
+    console.log('Visiting url at 127.0.0.1:8000'+REGION_URL_URL);
+    res.send(REGIONS)
+})
+
+//View the details of the hub
+app.get(HUBS_URL,(req,res)=>{
+    console.log('Visiting url at 127.0.0.1:8000'+HUBS_URL);
+    res.send(HUBS)
+})
+
+
+
 // --- MAIN USSD ROUTE ---
 app.post('/ussd', (req, res) => {
+
     // Read parameters sent from the gateway webhook (Africa's Talking format)
     const { sessionId, serviceCode, phoneNumber, text } = req.body;
 
     let response = "";
 
-    // The text variable contains accumulated inputs separated by asterisks (e.g., "2*1*1*45")
+    // The text variable contains accumulated inputs separated by asterisks ("1*2*3")
     // If it's empty, the user just dialed the root shortcode.
     const textSegments = text ? text.split('*') : [];
     const stepCount = textSegments.length;
@@ -78,93 +130,116 @@ app.post('/ussd', (req, res) => {
 
     // ROOT MENU
     if (stepCount === 0) {
-        response = `CON Fenice Agri-Market\n1. Check Market Prices\n2. Sell Produce`;
+        response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
     } 
     
-    // --- PATH 1: CHECK MARKET PRICES ---
+
+    // --- PATH 1: CHECK LOADSHEDDING ---
     else if (textSegments[0] === '1') {
-        if (stepCount === 1) {
-            response = `CON Select Hub:\n1. Lilongwe (Mitundu)\n2. Blantyre (Limbe)\n3. Zomba\n4. Mzuzu\n0. Back`;
-        } else if (stepCount === 2) {
-            const hubSelection = textSegments[1];
-            
-            if (hubSelection === '0') {
-                // User chose Back -> Reset text tracking path back to root parameters
-                response = `CON Fenice Agri-Market\n1. Check Market Prices\n2. Sell Produce`;
-            } else if (HUBS[hubSelection]) {
-                response = `END Current Prices/KG at ${HUBS[hubSelection]}:\n- Beans: ${CROP_PRICES.beans}\n- Maize: ${CROP_PRICES.maize}\n- Soya: ${CROP_PRICES.soya}\nPrices updated today 6 AM.`;
-                clearSession(sessionId); // Housekeeping
-            } else {
-                response = `END Invalid selection. Session terminated.`;
+        switch (stepCount) {
+            case 1: // Show Loadshedding Options
+                response = `CON Loadshedding Options:\n1. View your schedule\n2. Search location\n3. Search group\n4. View full schedule\n0. Back`;
+                break;
+
+            case 2: // Handle Loadshedding Sub-options
+                const loadsheddingOption = textSegments[1];
+                if (loadsheddingOption === '0') {
+                    response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
+                } else if (loadsheddingOption === '1') {
+                    // View your schedule
+                    saveSession(sessionId, { action: 'view_schedule' });
+                    response = `END Your Loadshedding Schedule:\nGroup A - Monday 2-4 PM\nGroup A - Wednesday 6-8 PM\nNext rotation: Friday 10 AM-12 PM`;
+                    clearSession(sessionId);
+                } else if (loadsheddingOption === '2') {
+                    // Search location
+                    response = `CON Enter location name:`;
+                    saveSession(sessionId, { action: 'search_location' });
+                } else if (loadsheddingOption === '3') {
+                    // Search group
+                    response = `CON Enter your group (A/B/C/D):`;
+                    saveSession(sessionId, { action: 'search_group' });
+                } else if (loadsheddingOption === '4') {
+                    // View full schedule
+                    response = `END Full Loadshedding Schedule:\nGroup A: Mon 2-4 PM, Wed 6-8 PM\nGroup B: Tue 2-4 PM, Thu 6-8 PM\nGroup C: Wed 2-4 PM, Fri 6-8 PM\nGroup D: Thu 2-4 PM, Sat 6-8 PM`;
+                    clearSession(sessionId);
+                } else {
+                    response = `END Invalid selection.`;
+                    clearSession(sessionId);
+                }
+                break;
+
+            case 3: // Handle search inputs
+                const sessionData = getSession(sessionId);
+                if (sessionData.action === 'search_location') {
+                    const location = textSegments[2];
+                    response = `END Schedule for ${location}:\nGroup B - Tuesday 2-4 PM\nGroup B - Thursday 6-8 PM\nLast updated: Today`;
+                    clearSession(sessionId);
+                } else if (sessionData.action === 'search_group') {
+                    const group = textSegments[2];
+                    response = `END Group ${group} Schedule:\nMonday 2-4 PM\nWednesday 6-8 PM\nNext slot: Friday 10 AM-12 PM`;
+                    clearSession(sessionId);
+                } else {
+                    response = `END Invalid action.`;
+                    clearSession(sessionId);
+                }
+                break;
+
+            default:
+                response = `END Invalid state routing.`;
                 clearSession(sessionId);
-            }
+                break;
         }
     } 
     
-    // --- PATH 2: SELL PRODUCE ---
+    // --- PATH 2: CHECK POWER OUTAGES ---
     else if (textSegments[0] === '2') {
         switch (stepCount) {
-            case 1: // Select Crop Type
-                response = `CON What are you selling?\n1. Beans\n2. Maize\n3. Soya\n0. Back`;
+            case 1: // Show Power Outage Options
+                response = `CON Power Outages:\n1. My outages\n2. View by district\n3. View today's schedule\n4. View all schedule\n0. Back`;
                 break;
 
-            case 2: // Handle Crop Selection & Show Regions
-                const cropSelection = textSegments[1];
-                if (cropSelection === '0') {
-                    response = `CON Fenice Agri-Market\n1. Check Market Prices\n2. Sell Produce`;
-                } else if (CROPS[cropSelection]) {
-                    saveSession(sessionId, { crop: CROPS[cropSelection] });
-                    response = `CON Select your location:\n1. Central Region\n2. Southern Region\n3. Northern Region\n0. Back`;
+            case 2: // Handle Power Outage Sub-options
+                const outageOption = textSegments[1];
+                if (outageOption === '0') {
+                    response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
+                } else if (outageOption === '1') {
+                    // My outages
+                    response = `END Your Recent Outages:\n- Jan 15: 4 hours\n- Jan 10: 3 hours\nTotal this month: 7 hours`;
+                    clearSession(sessionId);
+                } else if (outageOption === '2') {
+                    // View by district
+                    response = `CON Select district:\n1. Lilongwe\n2. Blantyre\n3. Zomba\n0. Back`;
+                    saveSession(sessionId, { action: 'view_district' });
+                } else if (outageOption === '3') {
+                    // View today's schedule
+                    response = `END Today's Outages:\n6:00 AM - 8:00 AM (Area A)\n2:00 PM - 4:00 PM (Area B)\n8:00 PM - 10:00 PM (Area C)`;
+                    clearSession(sessionId);
+                } else if (outageOption === '4') {
+                    // View all schedule
+                    response = `END Full Outage Schedule:\nWeek 1: 15 hours total\nWeek 2: 12 hours total\nWeek 3: 18 hours total`;
+                    clearSession(sessionId);
                 } else {
                     response = `END Invalid selection.`;
                     clearSession(sessionId);
                 }
                 break;
 
-            case 3: // Handle Region Selection & Ask for Quantity
-                const regionSelection = textSegments[2];
-                if (regionSelection === '0') {
-                    response = `CON What are you selling?\n1. Beans\n2. Maize\n3. Soya\n0. Back`;
-                } else if (REGIONS[regionSelection]) {
-                    saveSession(sessionId, { region: REGIONS[regionSelection] });
-                    response = `CON Enter estimated quantity\n(In 50KG bags):`;
+            case 3: // Handle district selection
+                const sessionDataPower = getSession(sessionId);
+                if (sessionDataPower.action === 'view_district') {
+                    const district = textSegments[2];
+                    const districtNames = { '1': 'Lilongwe', '2': 'Blantyre', '3': 'Zomba' };
+                    if (districtNames[district]) {
+                        response = `END Outages in ${districtNames[district]}:\n- Monday 2-4 PM\n- Wednesday 6-8 PM\nAverage duration: 2 hours`;
+                        clearSession(sessionId);
+                    } else {
+                        response = `END Invalid district.`;
+                        clearSession(sessionId);
+                    }
                 } else {
-                    response = `END Invalid selection.`;
+                    response = `END Invalid action.`;
                     clearSession(sessionId);
                 }
-                break;
-
-            case 4: // Handle Quantity Input & Show Confirmation Screen
-                const quantityInput = textSegments[3];
-                // Lightweight numeric check
-                if (!isNaN(quantityInput) && parseInt(quantityInput) > 0) {
-                    saveSession(sessionId, { quantity: parseInt(quantityInput) });
-                    
-                    // Fetch state fields from our session memory
-                    const sessionData = getSession(sessionId);
-
-                    response = `CON Confirm Sale:\nCrop: ${sessionData.crop}\nLoc: ${sessionData.region}\nQty: ${quantityInput} Bags\n1. Confirm & Submit\n2. Cancel`;
-                } else {
-                    response = `END Invalid quantity format. Please type a valid number.`;
-                    clearSession(sessionId);
-                }
-                break;
-
-            case 5: // Process Submission or Cancellation
-                const finalAction = textSegments[4];
-                if (finalAction === '1') {
-                    const sessionData = getSession(sessionId);
-
-                    // --- ASYNC DESIGN PATTERN ---
-                    // Fire background processes immediately without blocking the client response execution cycle.
-                    processAgriSaleBackgroundJob(phoneNumber, sessionData)
-                        .catch(err => console.error("Background job failed: ", err));
-
-                    response = `END Request Logged!\nAgro-dealers in your area will contact you shortly via call or SMS. Thank you.`;
-                } else {
-                    response = `END Sale cancelled successfully.`;
-                }
-                clearSession(sessionId); // Clean up cache memory bucket
                 break;
 
             default:
