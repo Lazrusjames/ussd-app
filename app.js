@@ -14,6 +14,7 @@ const loadJsonData = (fileName) => {
 
 // --- LOAD POWER MANAGEMENT DATA ---
 const DISTRICTS = loadJsonData('districts.json');
+const GROUPS = loadJsonData('groups.json');
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -42,6 +43,11 @@ const clearSession = (sessionId) => {
 // --- GET ALL DISTRICTS API ---
 app.get('/districts', (req, res) => {
     res.json(DISTRICTS);
+});
+
+// --- GET ALL GROUPS AND THEIR SCHEDULES API ---
+app.get('/groups', (req, res) => {
+    res.json(GROUPS);
 });
 
 // --- MAIN USSD ROUTE ---
@@ -78,9 +84,14 @@ app.post('/ussd', (req, res) => {
                 if (loadsheddingOption === '0') {
                     response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
                 } else if (loadsheddingOption === '1') {
-                    // View your schedule
-                    saveSession(sessionId, { action: 'view_schedule' });
-                    response = `END Your Loadshedding Schedule:\nGroup A - Monday 2-4 PM\nGroup A - Wednesday 6-8 PM\nNext rotation: Friday 10 AM-12 PM`;
+                    // View your schedule - Default to Group A (could be enhanced with user location detection)
+                    const groupData = GROUPS['A'];
+                    let scheduleInfo = `END Your Loadshedding Schedule:\nGroup A\n`;
+                    groupData.schedule.forEach(time => {
+                        scheduleInfo += `- ${time}\n`;
+                    });
+                    scheduleInfo += `Next rotation: Check daily`;
+                    response = scheduleInfo;
                     clearSession(sessionId);
                 } else if (loadsheddingOption === '2') {
                     // Search location
@@ -91,8 +102,13 @@ app.post('/ussd', (req, res) => {
                     response = `CON Enter your group (A/B/C/D):`;
                     saveSession(sessionId, { action: 'search_group' });
                 } else if (loadsheddingOption === '4') {
-                    // View full schedule
-                    response = `END Full Loadshedding Schedule:\nGroup A: Mon 2-4 PM, Wed 6-8 PM\nGroup B: Tue 2-4 PM, Thu 6-8 PM\nGroup C: Wed 2-4 PM, Fri 6-8 PM\nGroup D: Thu 2-4 PM, Sat 6-8 PM`;
+                    // View full schedule - Fetch from GROUPS data
+                    let fullSchedule = `END Full Loadshedding Schedule:\n`;
+                    for (let groupKey in GROUPS) {
+                        const groupData = GROUPS[groupKey];
+                        fullSchedule += `Group ${groupKey}: ${groupData.schedule.join(', ')}\n`;
+                    }
+                    response = fullSchedule;
                     clearSession(sessionId);
                 } else {
                     response = `END Invalid selection.`;
@@ -103,12 +119,42 @@ app.post('/ussd', (req, res) => {
             case 3: // Handle search inputs
                 const sessionData = getSession(sessionId);
                 if (sessionData.action === 'search_location') {
-                    const location = textSegments[2];
-                    response = `END Schedule for ${location}:\nGroup B - Tuesday 2-4 PM\nGroup B - Thursday 6-8 PM\nLast updated: Today`;
+                    const locationInput = textSegments[2].toLowerCase();
+                    // Find district by name
+                    let foundDistrict = null;
+                    for (let key in DISTRICTS) {
+                        if (DISTRICTS[key].name.toLowerCase() === locationInput) {
+                            foundDistrict = DISTRICTS[key];
+                            break;
+                        }
+                    }
+                    
+                    if (foundDistrict) {
+                        const groupData = GROUPS[foundDistrict.group];
+                        let scheduleInfo = `END Schedule for ${foundDistrict.name}:\n`;
+                        scheduleInfo += `Group ${foundDistrict.group}\n`;
+                        groupData.schedule.forEach(time => {
+                            scheduleInfo += `- ${time}\n`;
+                        });
+                        scheduleInfo += `Last updated: Today`;
+                        response = scheduleInfo;
+                    } else {
+                        response = `END Location not found.`;
+                    }
                     clearSession(sessionId);
                 } else if (sessionData.action === 'search_group') {
-                    const group = textSegments[2];
-                    response = `END Group ${group} Schedule:\nMonday 2-4 PM\nWednesday 6-8 PM\nNext slot: Friday 10 AM-12 PM`;
+                    const groupInput = textSegments[2].toUpperCase();
+                    if (GROUPS[groupInput]) {
+                        const groupData = GROUPS[groupInput];
+                        let scheduleInfo = `END Group ${groupInput} Schedule:\n`;
+                        groupData.schedule.forEach(time => {
+                            scheduleInfo += `- ${time}\n`;
+                        });
+                        scheduleInfo += `Next slot: Check daily`;
+                        response = scheduleInfo;
+                    } else {
+                        response = `END Invalid group. Use A, B, C, or D.`;
+                    }
                     clearSession(sessionId);
                 } else {
                     response = `END Invalid action.`;

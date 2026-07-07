@@ -3,6 +3,7 @@
     "id": "1",
     "name": "Lilongwe",
     "region": "Central",
+    "group": "A",
     "outageSchedule": [
       "Monday 2-4 PM",
       "Wednesday 6-8 PM"
@@ -13,6 +14,7 @@
     "id": "2",
     "name": "Blantyre",
     "region": "Southern",
+    "group": "B",
     "outageSchedule": [
       "Tuesday 2-4 PM",
       "Thursday 6-8 PM"
@@ -23,6 +25,7 @@
     "id": "3",
     "name": "Zomba",
     "region": "Southern",
+    "group": "C",
     "outageSchedule": [
       "Wednesday 2-4 PM",
       "Friday 6-8 PM"
@@ -33,6 +36,7 @@
     "id": "4",
     "name": "Mzuzu",
     "region": "Northern",
+    "group": "D",
     "outageSchedule": [
       "Thursday 2-4 PM",
       "Saturday 6-8 PM"
@@ -43,6 +47,7 @@
     "id": "5",
     "name": "Kasungu",
     "region": "Central",
+    "group": "A",
     "outageSchedule": [
       "Monday 6-8 PM",
       "Friday 2-4 PM"
@@ -53,6 +58,7 @@
     "id": "6",
     "name": "Mchinji",
     "region": "Central",
+    "group": "B",
     "outageSchedule": [
       "Tuesday 6-8 PM",
       "Thursday 2-4 PM"
@@ -63,6 +69,7 @@
     "id": "7",
     "name": "Dowa",
     "region": "Central",
+    "group": "C",
     "outageSchedule": [
       "Monday 2-4 PM",
       "Friday 6-8 PM"
@@ -73,6 +80,7 @@
     "id": "8",
     "name": "Salima",
     "region": "Central",
+    "group": "D",
     "outageSchedule": [
       "Wednesday 2-4 PM",
       "Saturday 6-8 PM"
@@ -83,6 +91,7 @@
     "id": "9",
     "name": "Ntchisi",
     "region": "Central",
+    "group": "A",
     "outageSchedule": [
       "Tuesday 2-4 PM",
       "Friday 6-8 PM"
@@ -93,6 +102,7 @@
     "id": "10",
     "name": "Dedza",
     "region": "Central",
+    "group": "B",
     "outageSchedule": [
       "Thursday 2-4 PM",
       "Saturday 6-8 PM"
@@ -103,6 +113,7 @@
     "id": "11",
     "name": "Mangochi",
     "region": "Southern",
+    "group": "C",
     "outageSchedule": [
       "Monday 6-8 PM",
       "Thursday 2-4 PM"
@@ -113,6 +124,7 @@
     "id": "12",
     "name": "Machinga",
     "region": "Southern",
+    "group": "D",
     "outageSchedule": [
       "Tuesday 2-4 PM",
       "Friday 6-8 PM"
@@ -123,6 +135,7 @@
     "id": "13",
     "name": "Nsanje",
     "region": "Southern",
+    "group": "A",
     "outageSchedule": [
       "Wednesday 6-8 PM",
       "Saturday 2-4 PM"
@@ -133,6 +146,7 @@
     "id": "14",
     "name": "Chikwawa",
     "region": "Southern",
+    "group": "B",
     "outageSchedule": [
       "Monday 2-4 PM",
       "Thursday 6-8 PM"
@@ -143,6 +157,7 @@
     "id": "15",
     "name": "Mulanje",
     "region": "Southern",
+    "group": "C",
     "outageSchedule": [
       "Tuesday 6-8 PM",
       "Saturday 2-4 PM"
@@ -153,6 +168,7 @@
     "id": "16",
     "name": "Neno",
     "region": "Southern",
+    "group": "D",
     "outageSchedule": [
       "Wednesday 2-4 PM",
       "Friday 6-8 PM"
@@ -163,6 +179,7 @@
     "id": "17",
     "name": "Balaka",
     "region": "Southern",
+    "group": "A",
     "outageSchedule": [
       "Thursday 6-8 PM",
       "Sunday 2-4 PM"
@@ -173,6 +190,7 @@
     "id": "18",
     "name": "Chitipa",
     "region": "Northern",
+    "group": "B",
     "outageSchedule": [
       "Monday 2-4 PM",
       "Saturday 6-8 PM"
@@ -183,6 +201,7 @@
     "id": "19",
     "name": "Karonga",
     "region": "Northern",
+    "group": "C",
     "outageSchedule": [
       "Tuesday 2-4 PM",
       "Saturday 6-8 PM"
@@ -193,6 +212,7 @@
     "id": "20",
     "name": "Nkhata Bay",
     "region": "Northern",
+    "group": "D",
     "outageSchedule": [
       "Wednesday 2-4 PM",
       "Sunday 6-8 PM"
@@ -203,6 +223,7 @@
     "id": "21",
     "name": "Rumphi",
     "region": "Northern",
+    "group": "A",
     "outageSchedule": [
       "Thursday 2-4 PM",
       "Sunday 6-8 PM"
