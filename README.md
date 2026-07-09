@@ -1,174 +1,104 @@
-# Fenice Agri-Market USSD Application
+# USSD Power Management (Loadshedding) API
 
-A USSD (Unstructured Supplementary Service Data) application for an agricultural marketplace that enables farmers and traders to check market prices and sell produce via simple text-based interactions.
+This project provides a USSD backend that lets mobile users check loadshedding schedules and recent power outage information. The app exposes a USSD webhook and a small set of HTTP APIs backed by Google Cloud Firestore as the single source of truth.
 
-## Overview
+Key behaviours:
+- Serve a multi-step USSD flow (via `POST /ussd`) implementing menus for Loadshedding and Power Outages.
+- Store and read district and group outage schedules from Firestore (`districts` and `groups` collections).
+- Seed Firestore with initial district/group data on first run (server boot or first request in serverless environments).
+- Provide monitoring and admin operations:
+  - `GET /districts` and `GET /groups` — read data from Firestore.
+  - `GET /outages` and `GET /outages/:district` — query outage schedule data.
+  - `GET /health` — simple health check reporting Firestore availability.
+  - `POST /admin/refresh` — protected admin endpoint to refresh the in-memory cache from Firestore.
 
-Fenice Agri-Market USSD provides a lightweight, accessible way for users to:
-- Check current market prices for common crops (beans, maize, soya)
-- Browse available market hubs across different regions
-- Sell produce through the platform
-
-The application is built with Node.js/Express and integrates with **Africa's Talking** USSD gateway for seamless mobile access.
-
-## Features
-
-- **Market Price Checking**: Real-time crop pricing information
-- **Regional Hubs**: Access to market locations (Lilongwe, Blantyre, Zomba, Mzuzu)
-- **Session Management**: In-memory session handling for multi-step USSD flows
-- **Stateless Design**: Ready for production deployment with Redis integration
+The app uses the Firebase Admin SDK to talk to Firestore; deployments must provide credentials (see Deployment section).
 
 ## Requirements
 
-- Node.js 14+
-- npm or yarn
-- Africa's Talking account and API credentials
-- Environment variables configuration
+- Node.js 16+ (tested with Node 18+ / 22+)
+- npm
+- Firestore enabled in a Google Cloud project and a service account with permissions to read/write Firestore
+- Environment variables: `FIREBASE_SERVICE_ACCOUNT` (recommended) and `ADMIN_SECRET` (optional, used to protect admin endpoints)
 
 ## Installation
 
-1. Clone the repository:
+1. Clone the repository and install dependencies:
+
 ```bash
 git clone <repository-url>
 cd ussd-app
-```
-
-2. Install dependencies:
-```bash
 npm install
 ```
 
-3. Create a `.env` file in the root directory and add your Africa's Talking credentials:
-```env
-AFRICASTALKING_API_KEY=your_api_key
-AFRICASTALKING_USERNAME=your_username
-PORT=3000
+2. Provide Firebase credentials for the Admin SDK. Recommended: set the full service account JSON into the `FIREBASE_SERVICE_ACCOUNT` environment variable (see Deployment section). Alternatively place `serviceAccountKey.json` in the project root only for local testing.
+
+3. (Optional) Set an admin secret to protect the refresh endpoint:
+
+```bash
+export ADMIN_SECRET="someLongSecret"
 ```
 
 ## Running the Application
 
-### Development Mode
+### Development
+
 ```bash
 npm run dev
 ```
-The server will start with hot-reload enabled via Nodemon.
 
-### Production Mode
+### Production / Direct Run
+
 ```bash
 node app.js
 ```
 
+Notes:
+- On direct runs the app seeds Firestore (if empty) then starts the server.
+- On serverless deployments (Vercel, Cloud Run) the app performs a request-time initialization to ensure Firestore is ready before serving API calls.
+
 ## API Endpoints
 
-### POST /ussd
-Receives USSD requests from Africa's Talking gateway.
+Main endpoints (examples):
 
-**Request Body:**
-```json
-{
-  "sessionId": "unique_session_identifier",
-  "serviceCode": "service_code",
-  "phoneNumber": "+265xxx",
-  "text": "user_input"
-}
-```
+- `POST /ussd` — USSD webhook (expects Africa's Talking style payload: `sessionId`, `serviceCode`, `phoneNumber`, `text`). Returns `CON` or `END` responses.
+- `GET /districts` — return all districts (JSON) from Firestore.
+- `GET /groups` — return all group schedules (JSON) from Firestore.
+- `GET /outages` — summary of outages by district.
+- `GET /outages/:district` — outages for a specific district.
+- `GET /health` — status and Firestore availability.
+- `POST /admin/refresh` — protected admin action; refreshes the in-memory cache from Firestore (requires `ADMIN_SECRET` header or body secret).
 
-**Response:**
-- `CON` - Continue session (prompt for more input)
-- `END` - End session
+## Deployment (Vercel / Serverless)
 
-## Architecture
+Steps to deploy successfully on Vercel or other serverless platforms:
 
-### Session Management
-The application uses an in-memory session store (`sessionStore` object) to maintain user state across USSD interactions.
-
-**For Production:**
-Replace the in-memory store with Redis for stateless, scalable deployment:
-```javascript
-// Update sessionStore with Redis client for production
-```
-
-### Data Structure
-- **CROP_PRICES**: Market prices for crops
-- **HUBS**: Regional market locations
-- **CROPS**: Available crop types
-- **REGIONS**: Geographic regions
-
-## Project Structure
-
-```
-ussd-app/
-├── app.js              # Main application and routing logic
-├── package.json        # Project dependencies and scripts
-├── .env               # Environment variables (create this)
-└── README.md          # This file
-```
-
-## Dependencies
-
-- **express**: Web framework for Node.js
-- **africastalking**: Africa's Talking API SDK
-- **dotenv**: Environment variable management
-- **body-parser**: Request body parsing middleware
-- **mongoose**: MongoDB ODM (for future database integration)
-- **nodemon**: Development server auto-reload
-
-## Development
-
-### Scripts
-- `npm run dev` - Start development server with hot-reload
-- `npm test` - Run tests (to be implemented)
-
-## Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `AFRICASTALKING_API_KEY` | Your Africa's Talking API key | Required |
-| `AFRICASTALKING_USERNAME` | Your Africa's Talking username | Required |
-| `PORT` | Server port | 3000 |
-
-## Future Enhancements
-
-- Database integration (MongoDB via Mongoose)
-- User authentication and profiles
-- Real-time price updates
-- Order management system
-- Payment integration
-- Admin dashboard
-
-## Notes
-
-- Current session store is in-memory; switch to Redis for production deployment
-- The application follows the Africa's Talking USSD gateway webhook format
-- USSD navigation uses asterisk-separated input segments (e.g., "2*1*1*45")
-
-## License
-
-ISC
-
-## Support
-
-For issues or questions, please refer to the Africa's Talking documentation or contact the development team.
-
-## Deployment (Vercel)
-
-When deploying to Vercel (or other serverless platforms) the application must be able to initialize the Firebase Admin SDK using a service account. Recommended approach is to set the service account JSON as an environment variable.
-
-- Enable the Cloud Firestore API for your project in Google Cloud Console.
-- Create a service account with Firestore permissions (e.g., `roles/firestore.admin`) and download the JSON key.
-- Add the service account JSON to Vercel as an environment variable named `FIREBASE_SERVICE_ACCOUNT` (value must be the full JSON blob). You can add it via the Vercel Dashboard or CLI:
+1. Enable the Cloud Firestore API for your Google Cloud project.
+2. Create a service account with Firestore access (e.g. `roles/firestore.admin`) and obtain the JSON key.
+3. On Vercel add the service account JSON as the environment variable `FIREBASE_SERVICE_ACCOUNT` (value is the raw JSON). Example with Vercel CLI:
 
 ```bash
 vercel env add FIREBASE_SERVICE_ACCOUNT production
 ```
 
-When prompted, paste the service account JSON. After adding the env var, redeploy the project.
+Paste the JSON when prompted and redeploy.
 
 Notes:
+
 - Ensure the service account has permissions to read/write Firestore.
-- If you run the app on GCP (Cloud Run, App Engine), Application Default Credentials (ADC) can be used instead of providing `FIREBASE_SERVICE_ACCOUNT`.
+- When running on GCP (Cloud Run, App Engine) you can rely on Application Default Credentials (ADC) instead of `FIREBASE_SERVICE_ACCOUNT`.
 
 Health-check endpoint:
 
-- `GET /health` — returns JSON indicating whether Firestore is available and initialized. Use this endpoint in Vercel's health checks.
+- `GET /health` — returns JSON indicating whether Firestore is available and initialized. Use this endpoint for deployment health checks.
+
+## Support
+
+If you need help:
+
+- Verify Firestore API is enabled in the Google Cloud Console for your project.
+- Check that `FIREBASE_SERVICE_ACCOUNT` contains valid JSON and the service account has Firestore access.
+- Confirm `ADMIN_SECRET` is set if you plan to use `/admin/refresh`.
+
+If you'd like, I can add an example script to call the admin refresh endpoint and provide automated deployment steps for Vercel.
 
