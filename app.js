@@ -2,306 +2,193 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createApiRouter } from './api/index.js';
+import { getApps, initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const loadJsonData = (fileName) => {
-    const filePath = path.join(__dirname, 'data', fileName);
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
+const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+
+let db = null;
+
+try {
+  const adminApp = getApps().length ? getApps()[0] : initializeApp({
+    credential: cert(serviceAccount)
+  });
+  db = getFirestore(adminApp);
+} catch (error) {
+  console.warn('Firebase Admin initialization failed, falling back to local data.', error.message);
+}
+
+const DISTRICTS_COLLECTION = 'districts';
+const GROUPS_COLLECTION = 'groups';
+
+const DEFAULT_DISTRICTS = {
+  1: {
+    id: '1',
+    name: 'Lilongwe',
+    region: 'Central',
+    group: 'A',
+    outageSchedule: ['Monday 2-4 PM', 'Wednesday 6-8 PM'],
+    averageDuration: '2 hours'
+  },
+  2: {
+    id: '2',
+    name: 'Blantyre',
+    region: 'Southern',
+    group: 'B',
+    outageSchedule: ['Tuesday 2-4 PM', 'Thursday 6-8 PM'],
+    averageDuration: '2.5 hours'
+  },
+  3: {
+    id: '3',
+    name: 'Zomba',
+    region: 'Southern',
+    group: 'C',
+    outageSchedule: ['Wednesday 2-4 PM', 'Friday 6-8 PM'],
+    averageDuration: '2 hours'
+  },
+  4: {
+    id: '4',
+    name: 'Mzuzu',
+    region: 'Northern',
+    group: 'D',
+    outageSchedule: ['Thursday 2-4 PM', 'Saturday 6-8 PM'],
+    averageDuration: '1.5 hours'
+  }
 };
 
-// --- LOAD POWER MANAGEMENT DATA ---
-const DISTRICTS = loadJsonData('districts.json');
-const GROUPS = loadJsonData('groups.json');
+const DEFAULT_GROUPS = {
+  A: {
+    group: 'A',
+    schedule: ['Monday 2-4 PM', 'Wednesday 6-8 PM'],
+    description: 'Group A Loadshedding Schedule'
+  },
+  B: {
+    group: 'B',
+    schedule: ['Tuesday 2-4 PM', 'Thursday 6-8 PM'],
+    description: 'Group B Loadshedding Schedule'
+  },
+  C: {
+    group: 'C',
+    schedule: ['Wednesday 2-4 PM', 'Friday 6-8 PM'],
+    description: 'Group C Loadshedding Schedule'
+  },
+  D: {
+    group: 'D',
+    schedule: ['Thursday 2-4 PM', 'Saturday 6-8 PM'],
+    description: 'Group D Loadshedding Schedule'
+  }
+};
 
+// Global references that will hold our runtime data
+let DISTRICTS = {};
+let GROUPS = {};
+
+const getCollectionData = async (collectionName) => {
+    if (!db) {
+        throw new Error('Firestore is not initialized');
+    }
+
+    const snapshot = await db.collection(collectionName).get();
+    const data = {};
+    snapshot.forEach((doc) => {
+        data[doc.id] = doc.data();
+    });
+    return data;
+};
+
+const writeCollectionData = async (collectionName, data) => {
+    if (!db) {
+        throw new Error('Firestore is not initialized');
+    }
+
+    const batch = db.batch();
+    for (const [id, value] of Object.entries(data)) {
+        const ref = db.collection(collectionName).doc(id.toString());
+        batch.set(ref, value);
+    }
+    await batch.commit();
+};
+
+const seedCollectionsIfEmpty = async () => {
+    if (!db) {
+        throw new Error('Firestore is not initialized');
+    }
+
+    const districtsSnapshot = await db.collection(DISTRICTS_COLLECTION).limit(1).get();
+    if (districtsSnapshot.empty) {
+        await writeCollectionData(DISTRICTS_COLLECTION, DEFAULT_DISTRICTS);
+    }
+
+    const groupsSnapshot = await db.collection(GROUPS_COLLECTION).limit(1).get();
+    if (groupsSnapshot.empty) {
+        await writeCollectionData(GROUPS_COLLECTION, DEFAULT_GROUPS);
+    }
+};
+
+const refreshFirebaseData = async () => {
+    const [districts, groups] = await Promise.all([
+        getCollectionData(DISTRICTS_COLLECTION),
+        getCollectionData(GROUPS_COLLECTION)
+    ]);
+
+    DISTRICTS = districts;
+    GROUPS = groups;
+};
+
+// --- THIS RUNS ONLY ONCE AT SERVER BOOT ---
+const bootUpDatabase = async () => {
+    if (!db) {
+        throw new Error('Firestore is not initialized');
+    }
+
+    await seedCollectionsIfEmpty();
+    await refreshFirebaseData();
+    console.log('Firebase Database connected and synced successfully.');
+};
+
+// Standard Express setup
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- code for speed ---
-const sessionStore = {};
+// --- REMOVED THE ASYNC MIDWLEWARE FROM HERE ---
 
+// Session management
+const sessionStore = {};
 const saveSession = (sessionId, data) => {
     sessionStore[sessionId] = { ...sessionStore[sessionId], ...data };
 };
-
 const getSession = (sessionId) => sessionStore[sessionId] || {};
+const clearSession = (sessionId) => { delete sessionStore[sessionId]; };
 
-const clearSession = (sessionId) => {
-    delete sessionStore[sessionId];
-};
+// Router setups function smoothly because variables are updated globally
+app.use(createApiRouter({
+    getDistricts: () => DISTRICTS,
+    getGroups: () => GROUPS,
+    getSession,
+    saveSession,
+    clearSession
+}));
 
-
-
-
-
-
-
-
-// --- GET ALL DISTRICTS API ---
-app.get('/districts', (req, res) => {
-    res.json(DISTRICTS);
-});
-
-// --- GET ALL GROUPS AND THEIR SCHEDULES API ---
-app.get('/groups', (req, res) => {
-    res.json(GROUPS);
-});
-
-// --- GET ALL POWER OUTAGES BY DISTRICT API ---
-app.get('/outages', (req, res) => {
-    const outagesByDistrict = Object.values(DISTRICTS).map((district) => ({
-        id: district.id,
-        name: district.name,
-        region: district.region,
-        group: district.group,
-        outageSchedule: district.outageSchedule,
-        averageDuration: district.averageDuration
-    }));
-
-    res.json(outagesByDistrict);
-});
-
-// --- GET POWER OUTAGES FOR A SPECIFIC DISTRICT API ---
-app.get('/outages/:district', (req, res) => {
-    const districtInput = req.params.district.toLowerCase();
-
-    const district = Object.values(DISTRICTS).find((item) => {
-        return item.name.toLowerCase() === districtInput || item.id === districtInput;
-    });
-
-    if (!district) {
-        return res.status(404).json({ message: 'District not found' });
-    }
-
-    res.json({
-        id: district.id,
-        name: district.name,
-        region: district.region,
-        group: district.group,
-        outageSchedule: district.outageSchedule,
-        averageDuration: district.averageDuration
-    });
-});
-
-// --- MAIN USSD ROUTE ---
-app.post('/ussd', (req, res) => {
-
-    // Read parameters sent from the gateway webhook (Africa's Talking format)
-    const { sessionId, serviceCode, phoneNumber, text } = req.body;
-
-    let response = "";
-
-    // The text variable contains accumulated inputs separated by asterisks ("1*2*3")
-    // If it's empty, the user just dialed the root shortcode.
-    const textSegments = text ? text.split('*') : [];
-    const stepCount = textSegments.length;
-
-    // Fetch or initialize session memory
-    let currentSession = getSession(sessionId);
-
-    // ROOT MENU
-    if (stepCount === 0) {
-        response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
-    } 
-    
-
-    // --- PATH 1: CHECK LOADSHEDDING ---
-    else if (textSegments[0] === '1') {
-        switch (stepCount) {
-            case 1: // Show Loadshedding Options
-                response = `CON Loadshedding Options:\n1. View your schedule\n2. Search location\n3. Search group\n4. View full schedule\n0. Back`;
-                break;
-
-            case 2: // Handle Loadshedding Sub-options
-                const loadsheddingOption = textSegments[1];
-                if (loadsheddingOption === '0') {
-                    response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
-                } else if (loadsheddingOption === '1') {
-                    // View your schedule - Default to Group A (could be enhanced with user location detection)
-                    const groupData = GROUPS['A'];
-                    let scheduleInfo = `END Your Loadshedding Schedule:\nGroup A\n`;
-                    groupData.schedule.forEach(time => {
-                        scheduleInfo += `- ${time}\n`;
-                    });
-                    scheduleInfo += `Next rotation: Check daily`;
-                    response = scheduleInfo;
-                    clearSession(sessionId);
-                } else if (loadsheddingOption === '2') {
-                    // Search location
-                    response = `CON Enter location name:`;
-                    saveSession(sessionId, { action: 'search_location' });
-                } else if (loadsheddingOption === '3') {
-                    // Search group
-                    response = `CON Enter your group (A/B/C/D):`;
-                    saveSession(sessionId, { action: 'search_group' });
-                } else if (loadsheddingOption === '4') {
-                    // View full schedule - Fetch from GROUPS data
-                    let fullSchedule = `END Full Loadshedding Schedule:\n`;
-                    for (let groupKey in GROUPS) {
-                        const groupData = GROUPS[groupKey];
-                        fullSchedule += `Group ${groupKey}: ${groupData.schedule.join(', ')}\n`;
-                    }
-                    response = fullSchedule;
-                    clearSession(sessionId);
-                } else {
-                    response = `END Invalid selection.`;
-                    clearSession(sessionId);
-                }
-                break;
-
-            case 3: // Handle search inputs
-                const sessionData = getSession(sessionId);
-                if (sessionData.action === 'search_location') {
-                    const locationInput = textSegments[2].toLowerCase();
-                    // Find district by name
-                    let foundDistrict = null;
-                    for (let key in DISTRICTS) {
-                        if (DISTRICTS[key].name.toLowerCase() === locationInput) {
-                            foundDistrict = DISTRICTS[key];
-                            break;
-                        }
-                    }
-                    
-                    if (foundDistrict) {
-                        const groupData = GROUPS[foundDistrict.group];
-                        let scheduleInfo = `END Schedule for ${foundDistrict.name}:\n`;
-                        scheduleInfo += `Group ${foundDistrict.group}\n`;
-                        groupData.schedule.forEach(time => {
-                            scheduleInfo += `- ${time}\n`;
-                        });
-                        scheduleInfo += `Last updated: Today`;
-                        response = scheduleInfo;
-                    } else {
-                        response = `END Location not found.`;
-                    }
-                    clearSession(sessionId);
-                } else if (sessionData.action === 'search_group') {
-                    const groupInput = textSegments[2].toUpperCase();
-                    if (GROUPS[groupInput]) {
-                        const groupData = GROUPS[groupInput];
-                        let scheduleInfo = `END Group ${groupInput} Schedule:\n`;
-                        groupData.schedule.forEach(time => {
-                            scheduleInfo += `- ${time}\n`;
-                        });
-                        scheduleInfo += `Next slot: Check daily`;
-                        response = scheduleInfo;
-                    } else {
-                        response = `END Invalid group. Use A, B, C, or D.`;
-                    }
-                    clearSession(sessionId);
-                } else {
-                    response = `END Invalid action.`;
-                    clearSession(sessionId);
-                }
-                break;
-
-            default:
-                response = `END Invalid state routing.`;
-                clearSession(sessionId);
-                break;
-        }
-    } 
-    
-    // --- PATH 2: CHECK POWER OUTAGES ---
-    else if (textSegments[0] === '2') {
-        switch (stepCount) {
-            case 1: // Show Power Outage Options
-                response = `CON Power Outages:\n1. My outages\n2. View by district\n3. View today's schedule\n4. View all schedule\n0. Back`;
-                break;
-
-            case 2: // Handle Power Outage Sub-options
-                const outageOption = textSegments[1];
-                if (outageOption === '0') {
-                    response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
-                } else if (outageOption === '1') {
-                    // My outages
-                    response = `END Your Recent Outages:\n- Jan 15: 4 hours\n- Jan 10: 3 hours\nTotal this month: 7 hours`;
-                    clearSession(sessionId);
-                } else if (outageOption === '2') {
-                    // View by district - allow direct district name search
-                    response = `CON Enter district name:`;
-                    saveSession(sessionId, { action: 'search_district' });
-                } else if (outageOption === '3') {
-                    // View today's schedule
-                    response = `END Today's Outages:\n6:00 AM - 8:00 AM (Area A)\n2:00 PM - 4:00 PM (Area B)\n8:00 PM - 10:00 PM (Area C)`;
-                    clearSession(sessionId);
-                } else if (outageOption === '4') {
-                    // View all schedule
-                    response = `END Full Outage Schedule:\nWeek 1: 15 hours total\nWeek 2: 12 hours total\nWeek 3: 18 hours total`;
-                    clearSession(sessionId);
-                } else {
-                    response = `END Invalid selection.`;
-                    clearSession(sessionId);
-                }
-                break;
-
-            case 3: // Handle district selection
-                const sessionDataPower = getSession(sessionId);
-                if (sessionDataPower.action === 'search_district') {
-                    const districtInput = textSegments[2].trim();
-                    if (districtInput === '0') {
-                        response = `CON Power Outages:\n1. My outages\n2. View by district\n3. View today's schedule\n4. View all schedule\n0. Back`;
-                    } else {
-                        let district = null;
-
-                        if (DISTRICTS[districtInput]) {
-                            district = DISTRICTS[districtInput];
-                        } else {
-                            const normalizedInput = districtInput.toLowerCase();
-                            for (const key in DISTRICTS) {
-                                if (DISTRICTS[key].name.toLowerCase() === normalizedInput) {
-                                    district = DISTRICTS[key];
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (district) {
-                            let outageInfo = `END Outages in ${district.name}:\n`;
-                            district.outageSchedule.forEach(schedule => {
-                                outageInfo += `- ${schedule}\n`;
-                            });
-                            outageInfo += `Average duration: ${district.averageDuration}`;
-                            response = outageInfo;
-                        } else {
-                            response = `END Invalid district selection.`;
-                        }
-                    }
-                    clearSession(sessionId);
-                } else {
-                    response = `END Invalid action.`;
-                    clearSession(sessionId);
-                }
-                break;
-
-            default:
-                response = `END Invalid state routing.`;
-                clearSession(sessionId);
-                break;
-        }
-    } else {
-        response = `END Option not recognized.`;
-        clearSession(sessionId);
-    }
-
-    // Set the response header type precisely to text/plain as expected by USSD gateways
-    res.set('Content-Type', 'text/plain');
-    res.send(response);
-});
-
-
-
-// Start Server Configuration
+// --- BOOTSTRAP LOGIC ---
 const PORT = process.env.PORT || 8000;
 const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === __filename;
 
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL && isDirectRun) {
-    app.listen(PORT, () => {
-        console.log(`USSD Engine operating seamlessly on system port ${PORT}`);
+    // 1. Initialize data FIRST, then fire up the HTTP listener
+    bootUpDatabase().then(() => {
+        app.listen(PORT, () => {
+            console.log(`USSD Engine operating seamlessly on system port ${PORT}`);
+        });
+    }).catch(err => {
+        console.error("Critical server failure during initialization:", err);
     });
 }
 
-export { app };
+export { app, bootUpDatabase, writeCollectionData };
 export default app;
