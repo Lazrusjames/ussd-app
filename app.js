@@ -31,6 +31,9 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   }
 }
 
+
+
+
 let db = null;
 
 try {
@@ -180,7 +183,6 @@ const bootUpDatabase = async () => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- REMOVED THE ASYNC MIDWLEWARE FROM HERE ---
 
 // Session management
 const sessionStore = {};
@@ -190,7 +192,7 @@ const saveSession = (sessionId, data) => {
 const getSession = (sessionId) => sessionStore[sessionId] || {};
 const clearSession = (sessionId) => { delete sessionStore[sessionId]; };
 
-// Ensure Firestore data is initialized on serverless environments (e.g. Vercel)
+// Ensure Firestore data is initialized on serverless environments 
 let _firestoreInitialized = false;
 app.use(async (req, res, next) => {
   if (!db) return next();
