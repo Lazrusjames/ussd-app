@@ -149,3 +149,26 @@ ISC
 ## Support
 
 For issues or questions, please refer to the Africa's Talking documentation or contact the development team.
+
+## Deployment (Vercel)
+
+When deploying to Vercel (or other serverless platforms) the application must be able to initialize the Firebase Admin SDK using a service account. Recommended approach is to set the service account JSON as an environment variable.
+
+- Enable the Cloud Firestore API for your project in Google Cloud Console.
+- Create a service account with Firestore permissions (e.g., `roles/firestore.admin`) and download the JSON key.
+- Add the service account JSON to Vercel as an environment variable named `FIREBASE_SERVICE_ACCOUNT` (value must be the full JSON blob). You can add it via the Vercel Dashboard or CLI:
+
+```bash
+vercel env add FIREBASE_SERVICE_ACCOUNT production
+```
+
+When prompted, paste the service account JSON. After adding the env var, redeploy the project.
+
+Notes:
+- Ensure the service account has permissions to read/write Firestore.
+- If you run the app on GCP (Cloud Run, App Engine), Application Default Credentials (ADC) can be used instead of providing `FIREBASE_SERVICE_ACCOUNT`.
+
+Health-check endpoint:
+
+- `GET /health` — returns JSON indicating whether Firestore is available and initialized. Use this endpoint in Vercel's health checks.
+

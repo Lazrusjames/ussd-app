@@ -11,17 +11,41 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
-const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+let serviceAccount = null;
+
+// Support providing the service account JSON via environment variable (recommended for deployments)
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } catch (err) {
+    console.error('Invalid FIREBASE_SERVICE_ACCOUNT JSON:', err.message);
+  }
+} else {
+  // Fallback to local file if present
+  try {
+    if (fs.existsSync(serviceAccountPath)) {
+      serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+    }
+  } catch (err) {
+    console.error('Failed to read local serviceAccountKey.json:', err.message);
+  }
+}
 
 let db = null;
 
 try {
-  const adminApp = getApps().length ? getApps()[0] : initializeApp({
-    credential: cert(serviceAccount)
-  });
+  let adminApp;
+  if (serviceAccount) {
+    adminApp = getApps().length ? getApps()[0] : initializeApp({
+      credential: cert(serviceAccount)
+    });
+  } else {
+    // Try initialize with default credentials (useful when running inside GCP)
+    adminApp = getApps().length ? getApps()[0] : initializeApp();
+  }
   db = getFirestore(adminApp);
 } catch (error) {
-  console.warn('Firebase Admin initialization failed, falling back to local data.', error.message);
+  console.warn('Firebase Admin initialization failed; Firestore unavailable:', error.message);
 }
 
 const DISTRICTS_COLLECTION = 'districts';
@@ -166,14 +190,39 @@ const saveSession = (sessionId, data) => {
 const getSession = (sessionId) => sessionStore[sessionId] || {};
 const clearSession = (sessionId) => { delete sessionStore[sessionId]; };
 
+// Ensure Firestore data is initialized on serverless environments (e.g. Vercel)
+let _firestoreInitialized = false;
+app.use(async (req, res, next) => {
+  if (!db) return next();
+  if (!_firestoreInitialized) {
+    try {
+      await bootUpDatabase();
+      _firestoreInitialized = true;
+    } catch (err) {
+      console.error('Failed to initialize Firestore on request:', err.message);
+      return next();
+    }
+  }
+  next();
+});
+
 // Router setups function smoothly because variables are updated globally
 app.use(createApiRouter({
-    getDistricts: () => DISTRICTS,
-    getGroups: () => GROUPS,
-    getSession,
-    saveSession,
-    clearSession
+  getDistricts: () => DISTRICTS,
+  getGroups: () => GROUPS,
+  getSession,
+  saveSession,
+  clearSession
 }));
+
+// Health check endpoint for deployments and monitoring
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    firestoreAvailable: !!db,
+    firestoreInitialized: !!_firestoreInitialized
+  });
+});
 
 // --- BOOTSTRAP LOGIC ---
 const PORT = process.env.PORT || 8000;
