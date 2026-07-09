@@ -224,6 +224,34 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Per-request data-source header and simple logging
+app.use((req, res, next) => {
+  const dataSource = (db && _firestoreInitialized) ? 'firestore' : 'unavailable';
+  res.set('X-Data-Source', dataSource);
+  console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl} dataSource=${dataSource}`);
+  next();
+});
+
+// Admin endpoint to refresh Firestore cache (protected by ADMIN_SECRET env var)
+app.post('/admin/refresh', async (req, res) => {
+  const secret = req.headers['x-admin-secret'] || req.body?.secret;
+  if (!process.env.ADMIN_SECRET || secret !== process.env.ADMIN_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (!db) {
+    return res.status(503).json({ error: 'Firestore not initialized' });
+  }
+
+  try {
+    await refreshFirebaseData();
+    return res.json({ ok: true, message: 'Cache refreshed' });
+  } catch (err) {
+    console.error('Admin refresh failed:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // --- BOOTSTRAP LOGIC ---
 const PORT = process.env.PORT || 8000;
 const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === __filename;
