@@ -53,6 +53,7 @@ try {
 
 const DISTRICTS_COLLECTION = 'districts';
 const GROUPS_COLLECTION = 'groups';
+const FAULT_REPORTS_COLLECTION = 'fault_reports';
 
 const DEFAULT_DISTRICTS = {
   1: {
@@ -158,6 +159,35 @@ const seedCollectionsIfEmpty = async () => {
     }
 };
 
+const getFaultReports = async () => {
+  if (!db) {
+    return [];
+  }
+
+  const snapshot = await db.collection(FAULT_REPORTS_COLLECTION).get();
+  const reports = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  return reports.sort((a, b) => {
+    const aDate = new Date(a.created_at || a.created_date || 0).getTime();
+    const bDate = new Date(b.created_at || b.created_date || 0).getTime();
+    return bDate - aDate;
+  });
+};
+
+const saveFaultReport = async (report) => {
+  if (!db) {
+    return report;
+  }
+
+  const ref = db.collection(FAULT_REPORTS_COLLECTION).doc();
+  const payload = {
+    ...report,
+    created_at: report.created_at || report.created_date || new Date().toISOString(),
+    created_date: report.created_date || report.created_at || new Date().toISOString()
+  };
+  await ref.set(payload);
+  return { id: ref.id, ...payload };
+};
+
 const refreshFirebaseData = async () => {
     const [districts, groups] = await Promise.all([
         getCollectionData(DISTRICTS_COLLECTION),
@@ -214,7 +244,9 @@ app.use(createApiRouter({
   getGroups: () => GROUPS,
   getSession,
   saveSession,
-  clearSession
+  clearSession,
+  getFaultReports,
+  saveFaultReport
 }));
 
 // Health check endpoint for deployments and monitoring
@@ -269,5 +301,5 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL && isDirectRun) {
     });
 }
 
-export { app, bootUpDatabase, writeCollectionData };
+export { app, bootUpDatabase, writeCollectionData, getFaultReports, saveFaultReport };
 export default app;

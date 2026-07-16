@@ -1,11 +1,101 @@
 import express from 'express';
 
-export const createApiRouter = ({ getDistricts, getGroups, getSession, saveSession, clearSession }) => {
+export const createApiRouter = ({
+    getDistricts,
+    getGroups,
+    getSession,
+    saveSession,
+    clearSession,
+    getFaultReports,
+    saveFaultReport
+}) => {
     const router = express.Router();
 
     router.get('/districts', (req, res) => {
         res.json(getDistricts());
     });
+
+    const faultCategories = {
+        '1': {
+            label: 'No Power',
+            options: [
+                { key: '1', label: 'Single House' },
+                { key: '2', label: 'Area' }
+            ]
+        },
+        '2': {
+            label: 'Meter Issues',
+            options: [
+                { key: '1', label: 'Connection error' },
+                { key: '2', label: 'Token Validation errors' },
+                { key: '3', label: 'Dead meter' },
+                { key: '4', label: 'Meter locked' },
+                { key: '5', label: 'Meter not deducting units' }
+            ]
+        },
+        '3': {
+            label: 'Hazardous Situations',
+            options: [
+                { key: '1', label: 'Fallen Powerlines' },
+                { key: '2', label: 'Broken Transformers' },
+                { key: '3', label: 'Vandalized Transformers' },
+                { key: '4', label: 'Severe Sparking' },
+                { key: '5', label: 'Electric Shocks' }
+            ]
+        },
+        '4': {
+            label: 'Voltage Issues',
+            options: [
+                { key: '1', label: 'Low Voltage' },
+                { key: '2', label: 'High Voltage' },
+                { key: '3', label: 'Voltage fluctuations' },
+                { key: '4', label: 'Single Phase outage' },
+                { key: '5', label: 'Unbalanced Voltage' }
+            ]
+        },
+        '5': {
+            label: 'Vandalism/Theft',
+            options: [
+                { key: '1', label: 'Transformer vandalism' },
+                { key: '2', label: 'Overhead conductor theft' },
+                { key: '3', label: 'Meter Tampering' },
+                { key: '4', label: 'Earth system theft' },
+                { key: '5', label: 'Pole cutting' }
+            ]
+        }
+    };
+
+    const getFaultReportRoutes = async (req, res) => {
+        try {
+            const reports = await getFaultReports();
+            res.json(reports);
+        } catch (error) {
+            res.status(500).json({ message: error.message });
+        }
+    };
+
+    const postFaultReportRoute = async (req, res) => {
+        try {
+            const payload = req.body || {};
+            const report = {
+                customer_name: payload.customer_name || '',
+                phone: payload.phone || '',
+                fault: payload.fault || '',
+                location: payload.location || '',
+                created_at: payload.created_at || new Date().toISOString()
+            };
+
+            const savedReport = await saveFaultReport(report);
+            res.status(201).json(savedReport);
+        } catch (error) {
+            res.status(500).json({ message: error.message });
+        }
+    };
+
+    router.get('/faults', getFaultReportRoutes);
+    router.get('/fault-reports', getFaultReportRoutes);
+    router.post('/faults', postFaultReportRoute);
+    router.post('/fault-reports', postFaultReportRoute);
 
     router.get('/groups', (req, res) => {
         res.json(getGroups());
@@ -46,17 +136,77 @@ export const createApiRouter = ({ getDistricts, getGroups, getSession, saveSessi
         });
     });
 
-    router.post('/ussd', (req, res) => {
+    router.post('/ussd', async (req, res) => {
         const { sessionId, serviceCode, phoneNumber, text } = req.body;
         let response = '';
         const textSegments = text ? text.split('*') : [];
         const stepCount = textSegments.length;
         const districts = getDistricts();
         const groups = getGroups();
-        let currentSession = getSession(sessionId);
+        const sessionData = getSession(sessionId) || {};
 
         if (stepCount === 0) {
-            response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
+            response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages\n3. Report a Fault`;
+        } else if (textSegments[0] === '3') {
+            const currentAction = sessionData.action;
+            if (!currentAction && stepCount === 1) {
+                response = `CON Fault Report\nEnter your full name:`;
+                saveSession(sessionId, { action: 'fault_name' });
+            } else if (currentAction === 'fault_name' && stepCount === 2) {
+                saveSession(sessionId, { action: 'fault_phone', customer_name: textSegments[1].trim() });
+                response = `CON Fault Report\nEnter your phone number:`;
+            } else if (currentAction === 'fault_phone' && stepCount === 3) {
+                saveSession(sessionId, { action: 'fault_category', phone: textSegments[2].trim() });
+                response = `CON Fault Report\nSelect fault category:\n1. No Power\n2. Meter Issues\n3. Hazardous Situations\n4. Voltage Issues\n5. Vandalism/Theft`;
+            } else if (currentAction === 'fault_category' && stepCount === 4) {
+                const categoryChoice = textSegments[3];
+                const category = faultCategories[categoryChoice];
+                if (!category) {
+                    response = `END Invalid fault category.`;
+                    clearSession(sessionId);
+                } else {
+                    saveSession(sessionId, {
+                        action: 'fault_detail',
+                        faultCategoryKey: categoryChoice,
+                        faultCategory: category.label
+                    });
+                    const optionsPrompt = category.options.map((option, index) => `${index + 1}. ${option.label}`).join('\n');
+                    response = `CON Fault Report\nSelect detail:\n${optionsPrompt}`;
+                }
+            } else if (currentAction === 'fault_detail' && stepCount === 5) {
+                const categoryKey = sessionData.faultCategoryKey;
+                const category = faultCategories[categoryKey];
+                const detailChoice = textSegments[4];
+                const selectedDetail = category?.options.find((option) => option.key === detailChoice);
+                if (!category || !selectedDetail) {
+                    response = `END Invalid fault detail.`;
+                    clearSession(sessionId);
+                } else {
+                    saveSession(sessionId, {
+                        action: 'fault_location',
+                        fault: `${sessionData.faultCategory}: ${selectedDetail.label}`
+                    });
+                    response = `CON Fault Report\nEnter location:`;
+                }
+            } else if (currentAction === 'fault_location' && stepCount === 6) {
+                const payload = {
+                    customer_name: sessionData.customer_name || '',
+                    phone: sessionData.phone || '',
+                    fault: sessionData.fault || '',
+                    location: textSegments[5].trim(),
+                    created_at: new Date().toISOString()
+                };
+                try {
+                    await saveFaultReport(payload);
+                    response = `END Fault report received. Thank you.`;
+                } catch (error) {
+                    response = `END Unable to save fault report.`;
+                }
+                clearSession(sessionId);
+            } else {
+                response = `END Fault report cancelled.`;
+                clearSession(sessionId);
+            }
         } else if (textSegments[0] === '1') {
             switch (stepCount) {
                 case 1:
