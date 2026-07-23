@@ -370,6 +370,7 @@ export const createApiRouter = ({
             clearSession(sessionId);
         }
 
+        
         res.set('Content-Type', 'text/plain');
         res.send(response);
     });

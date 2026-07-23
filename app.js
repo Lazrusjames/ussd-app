@@ -355,5 +355,6 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL && isDirectRun) {
     });
 }
 
+// for deployment
 export { app, bootUpDatabase, writeCollectionData, getFaultReports, saveFaultReport };
 export default app;
