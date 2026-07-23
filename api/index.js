@@ -234,8 +234,9 @@ export const createApiRouter = ({
                 response = `END Fault report cancelled.`;
                 clearSession(sessionId);
             }
-        }else if (textSegments[0] === '1') {
-    switch (stepCount) {
+        }
+        else if (textSegments[0] === '1') {
+        switch (stepCount) {
         case 1:
             response = `CON Loadshedding Options:\n1. View your schedule\n2. Search location\n3. Search group\n4. View full schedule\n0. Back`;
             break;
