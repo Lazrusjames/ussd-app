@@ -1,3 +1,4 @@
+
 import express from 'express';
 
 export const createApiRouter = ({
@@ -6,15 +7,23 @@ export const createApiRouter = ({
     getSession,
     saveSession,
     clearSession,
-    getFaultReports,
-    saveFaultReport
+    getFaults,
+    saveFault
 }) => {
+
+    // CREATION OF ROUTER OBJECT TO BE USED FOR PUBLISHING THE APIS
     const router = express.Router();
 
+
+
+    // GET Requesting function returning response after entry of /districts
     router.get('/districts', (req, res) => {
         res.json(getDistricts());
     });
 
+
+
+    // definition of the  fault categories to be used in the app
     const faultCategories = {
         '1': {
             label: 'No Power',
@@ -65,16 +74,24 @@ export const createApiRouter = ({
         }
     };
 
-    const getFaultReportRoutes = async (req, res) => {
+    //END OF THE FAULT CATEGORIES
+
+
+
+    // DEFINING getFAULTSROUTE FUNCTION THAT RETURNS ALL FAULTS
+    const getFaultsRoute = async (req, res) => {
         try {
-            const reports = await getFaultReports();
+            const reports = await getFaults();
             res.json(reports);
         } catch (error) {
             res.status(500).json({ message: error.message });
         }
     };
 
-    const postFaultReportRoute = async (req, res) => {
+
+
+    // DEFINING FUNCTION THAT ADD FAULTS TO THE DATABASE URL
+    const postFaultRoute = async (req, res) => {
         try {
             const payload = req.body || {};
             const report = {
@@ -92,15 +109,18 @@ export const createApiRouter = ({
         }
     };
 
-    router.get('/faults', getFaultReportRoutes);
-    router.get('/fault-reports', getFaultReportRoutes);
-    router.post('/faults', postFaultReportRoute);
-    router.post('/fault-reports', postFaultReportRoute);
 
+    //ROUTES AND FUNCTIONS BEING CALLED BY THE REQUEST AND CALLBACK 
+    router.get('/faults', getFaultsRoute);
+    router.post('/faults', postFaultRoute);
+  
+//DEFINITION OF THE FUNCTION THAT RETURNS  groups
     router.get('/groups', (req, res) => {
         res.json(getGroups());
     });
 
+
+    //DEFITION OF THE FUNCTION THAT RETURNS  OUTAGES FROM ALL DISTRICTS
     router.get('/outages', (req, res) => {
         const outagesByDistrict = Object.values(getDistricts()).map((district) => ({
             id: district.id,
@@ -114,12 +134,16 @@ export const createApiRouter = ({
         res.json(outagesByDistrict);
     });
 
+
+
+    //DEFINITION OF THE ROUTER THAT RETURNS OUTAGE FOR SPECIFIC DISTRICTS
     router.get('/outages/:district', (req, res) => {
-        const districtInput = req.params.district.toLowerCase();
-        const districts = getDistricts();
+
+        const districtInput = req.params.district.toLowerCase(); // Getting inputs from the url and turning it to lowercases
+        const districts = getDistricts(); // collecting districts to function which read all districts from the database
 
         const district = Object.values(districts).find((item) => {
-            return item.name.toLowerCase() === districtInput || item.id === districtInput;
+            return item.name.toLowerCase() === districtInput || item.id === districtInput; //Either item name or id matching with the one which the user has entered it will return
         });
 
         if (!district) {
@@ -136,6 +160,9 @@ export const createApiRouter = ({
         });
     });
 
+
+
+// Definition of the function which is used to  handle the ussd functions
     router.post('/ussd', async (req, res) => {
         const { sessionId, serviceCode, phoneNumber, text } = req.body;
         let response = '';
@@ -207,94 +234,105 @@ export const createApiRouter = ({
                 response = `END Fault report cancelled.`;
                 clearSession(sessionId);
             }
-        } else if (textSegments[0] === '1') {
-            switch (stepCount) {
-                case 1:
-                    response = `CON Loadshedding Options:\n1. View your schedule\n2. Search location\n3. Search group\n4. View full schedule\n0. Back`;
-                    break;
-                case 2: {
-                    const loadsheddingOption = textSegments[1];
-                    if (loadsheddingOption === '0') {
-                        response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
-                    } else if (loadsheddingOption === '1') {
-                        const groupData = groups['A'];
-                        let scheduleInfo = `END Your Loadshedding Schedule:\nGroup A\n`;
-                        groupData.schedule.forEach(time => {
-                            scheduleInfo += `- ${time}\n`;
-                        });
-                        scheduleInfo += `Next rotation: Check daily`;
-                        response = scheduleInfo;
-                        clearSession(sessionId);
-                    } else if (loadsheddingOption === '2') {
-                        response = `CON Enter location name:`;
-                        saveSession(sessionId, { action: 'search_location' });
-                    } else if (loadsheddingOption === '3') {
-                        response = `CON Enter your group (A/B/C/D):`;
-                        saveSession(sessionId, { action: 'search_group' });
-                    } else if (loadsheddingOption === '4') {
-                        let fullSchedule = `END Full Loadshedding Schedule:\n`;
-                        for (let groupKey in groups) {
-                            const groupData = groups[groupKey];
-                            fullSchedule += `Group ${groupKey}: ${groupData.schedule.join(', ')}\n`;
-                        }
-                        response = fullSchedule;
-                        clearSession(sessionId);
-                    } else {
-                        response = `END Invalid selection.`;
-                        clearSession(sessionId);
-                    }
-                    break;
+        }else if (textSegments[0] === '1') {
+    switch (stepCount) {
+        case 1:
+            response = `CON Loadshedding Options:\n1. View your schedule\n2. Search location\n3. Search group\n4. View full schedule\n0. Back`;
+            break;
+        case 2: {
+            const loadsheddingOption = textSegments[1];
+            if (loadsheddingOption === '0') {
+                response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
+            } else if (loadsheddingOption === '1') {
+                const groupData = groups['A'];
+                let scheduleInfo = `END Your Loadshedding Schedule:\nGroup A\n`;
+                if (groupData && groupData.schedule) {
+                    groupData.schedule.forEach(item => {
+                        scheduleInfo += `- ${item.day}: ${item.startTime} - ${item.endTime}\n`;
+                    });
                 }
-                case 3: {
-                    const sessionData = getSession(sessionId);
-                    if (sessionData.action === 'search_location') {
-                        const locationInput = textSegments[2].toLowerCase();
-                        let foundDistrict = null;
-                        for (let key in districts) {
-                            if (districts[key].name.toLowerCase() === locationInput) {
-                                foundDistrict = districts[key];
-                                break;
-                            }
-                        }
-
-                        if (foundDistrict) {
-                            const groupData = groups[foundDistrict.group];
-                            let scheduleInfo = `END Schedule for ${foundDistrict.name}:\n`;
-                            scheduleInfo += `Group ${foundDistrict.group}\n`;
-                            groupData.schedule.forEach(time => {
-                                scheduleInfo += `- ${time}\n`;
-                            });
-                            scheduleInfo += `Last updated: Today`;
-                            response = scheduleInfo;
-                        } else {
-                            response = `END Location not found.`;
-                        }
-                        clearSession(sessionId);
-                    } else if (sessionData.action === 'search_group') {
-                        const groupInput = textSegments[2].toUpperCase();
-                        if (groups[groupInput]) {
-                            const groupData = groups[groupInput];
-                            let scheduleInfo = `END Group ${groupInput} Schedule:\n`;
-                            groupData.schedule.forEach(time => {
-                                scheduleInfo += `- ${time}\n`;
-                            });
-                            scheduleInfo += `Next slot: Check daily`;
-                            response = scheduleInfo;
-                        } else {
-                            response = `END Invalid group. Use A, B, C, or D.`;
-                        }
-                        clearSession(sessionId);
-                    } else {
-                        response = `END Invalid action.`;
-                        clearSession(sessionId);
+                scheduleInfo += `Next rotation: Check daily`;
+                response = scheduleInfo;
+                clearSession(sessionId);
+            } else if (loadsheddingOption === '2') {
+                response = `CON Enter location name:`;
+                saveSession(sessionId, { action: 'search_location' });
+            } else if (loadsheddingOption === '3') {
+                response = `CON Enter your group (A/B/C/D):`;
+                saveSession(sessionId, { action: 'search_group' });
+            } else if (loadsheddingOption === '4') {
+                let fullSchedule = `END Full Loadshedding Schedule:\n`;
+                for (let groupKey in groups) {
+                    const groupData = groups[groupKey];
+                    if (groupData && groupData.schedule) {
+                        const times = groupData.schedule
+                            .map(s => `${s.day.slice(0,3)} ${s.startTime}-${s.endTime}`)
+                            .join(', ');
+                        fullSchedule += `Group ${groupKey}: ${times}\n`;
                     }
-                    break;
                 }
-                default:
-                    response = `END Invalid state routing.`;
-                    clearSession(sessionId);
-                    break;
+                response = fullSchedule;
+                clearSession(sessionId);
+            } else {
+                response = `END Invalid selection.`;
+                clearSession(sessionId);
             }
+            break;
+        }
+        case 3: {
+            const sessionData = getSession(sessionId);
+            if (sessionData.action === 'search_location') {
+                const locationInput = textSegments[2].toLowerCase();
+                let foundDistrict = null;
+                for (let key in districts) {
+                    if (districts[key].name.toLowerCase() === locationInput) {
+                        foundDistrict = districts[key];
+                        break;
+                    }
+                }
+
+                if (foundDistrict) {
+                    const groupData = groups[foundDistrict.group];
+                    let scheduleInfo = `END Schedule for ${foundDistrict.name}:\nGroup ${foundDistrict.group}\n`;
+                    if (groupData && groupData.schedule) {
+                        groupData.schedule.forEach(item => {
+                            scheduleInfo += `- ${item.day}: ${item.startTime} - ${item.endTime}\n`;
+                        });
+                    }
+                    scheduleInfo += `Last updated: Today`;
+                    response = scheduleInfo;
+                } else {
+                    response = `END Location not found.`;
+                }
+                clearSession(sessionId);
+            } else if (sessionData.action === 'search_group') {
+                const groupInput = textSegments[2].toUpperCase();
+                if (groups[groupInput]) {
+                    const groupData = groups[groupInput];
+                    let scheduleInfo = `END Group ${groupInput} Schedule:\n`;
+                    if (groupData && groupData.schedule) {
+                        groupData.schedule.forEach(item => {
+                            scheduleInfo += `- ${item.day}: ${item.startTime} - ${item.endTime}\n`;
+                        });
+                    }
+                    scheduleInfo += `Next slot: Check daily`;
+                    response = scheduleInfo;
+                } else {
+                    response = `END Invalid group. Use A, B, C, or D.`;
+                }
+                clearSession(sessionId);
+            } else {
+                response = `END Invalid action.`;
+                clearSession(sessionId);
+            }
+            break;
+        }
+        default:
+            response = `END Invalid state routing.`;
+            clearSession(sessionId);
+            break;
+    }
+
         } else if (textSegments[0] === '2') {
             switch (stepCount) {
                 case 1:
@@ -370,7 +408,7 @@ export const createApiRouter = ({
             clearSession(sessionId);
         }
 
-        
+
         res.set('Content-Type', 'text/plain');
         res.send(response);
     });
