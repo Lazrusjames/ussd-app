@@ -163,256 +163,312 @@ export const createApiRouter = ({
 
 
 // Definition of the function which is used to  handle the ussd functions
-    router.post('/ussd', async (req, res) => {
-        const { sessionId, serviceCode, phoneNumber, text } = req.body;
-        let response = '';
-        const textSegments = text ? text.split('*') : [];
-        const stepCount = textSegments.length;
-        const districts = getDistricts();
-        const groups = getGroups();
-        const sessionData = getSession(sessionId) || {};
+ router.post('/ussd', async (req, res) => {
+    const { sessionId, serviceCode, phoneNumber, text } = req.body;
+    let response = '';
 
-        if (stepCount === 0) {
-            response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages\n3. Report a Fault`;
-        } else if (textSegments[0] === '3') {
-            const currentAction = sessionData.action;
-            if (!currentAction && stepCount === 1) {
-                response = `CON Fault Report\nEnter your full name:`;
-                saveSession(sessionId, { action: 'fault_name' });
-            } else if (currentAction === 'fault_name' && stepCount === 2) {
-                saveSession(sessionId, { action: 'fault_phone', customer_name: textSegments[1].trim() });
-                response = `CON Fault Report\nEnter your phone number:`;
-            } else if (currentAction === 'fault_phone' && stepCount === 3) {
-                saveSession(sessionId, { action: 'fault_category', phone: textSegments[2].trim() });
-                response = `CON Fault Report\nSelect fault category:\n1. No Power\n2. Meter Issues\n3. Hazardous Situations\n4. Voltage Issues\n5. Vandalism/Theft`;
-            } else if (currentAction === 'fault_category' && stepCount === 4) {
-                const categoryChoice = textSegments[3];
-                const category = faultCategories[categoryChoice];
-                if (!category) {
-                    response = `END Invalid fault category.`;
-                    clearSession(sessionId);
-                } else {
-                    saveSession(sessionId, {
-                        action: 'fault_detail',
-                        faultCategoryKey: categoryChoice,
-                        faultCategory: category.label
-                    });
-                    const optionsPrompt = category.options.map((option, index) => `${index + 1}. ${option.label}`).join('\n');
-                    response = `CON Fault Report\nSelect detail:\n${optionsPrompt}`;
-                }
-            } else if (currentAction === 'fault_detail' && stepCount === 5) {
-                const categoryKey = sessionData.faultCategoryKey;
-                const category = faultCategories[categoryKey];
-                const detailChoice = textSegments[4];
-                const selectedDetail = category?.options.find((option) => option.key === detailChoice);
-                if (!category || !selectedDetail) {
-                    response = `END Invalid fault detail.`;
-                    clearSession(sessionId);
-                } else {
-                    saveSession(sessionId, {
-                        action: 'fault_location',
-                        fault: `${sessionData.faultCategory}: ${selectedDetail.label}`
-                    });
-                    response = `CON Fault Report\nEnter location:`;
-                }
-            } else if (currentAction === 'fault_location' && stepCount === 6) {
-                const payload = {
-                    customer_name: sessionData.customer_name || '',
-                    phone: sessionData.phone || '',
-                    fault: sessionData.fault || '',
-                    location: textSegments[5].trim(),
-                    created_at: new Date().toISOString()
-                };
-                try {
-                    await saveFaultReport(payload);
-                    response = `END Fault report received. Thank you.`;
-                } catch (error) {
-                    response = `END Unable to save fault report.`;
-                }
-                clearSession(sessionId);
-            } else {
-                response = `END Fault report cancelled.`;
-                clearSession(sessionId);
-            }
-        }
-        else if (textSegments[0] === '1') {
-        switch (stepCount) {
-        case 1:
-            response = `CON Loadshedding Options:\n1. View your schedule\n2. Search location\n3. Search group\n4. View full schedule\n0. Back`;
-            break;
-        case 2: {
-            const loadsheddingOption = textSegments[1];
-            if (loadsheddingOption === '0') {
-                response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
-            } else if (loadsheddingOption === '1') {
-                const groupData = groups['A'];
-                let scheduleInfo = `END Your Loadshedding Schedule:\nGroup A\n`;
-                if (groupData && groupData.schedule) {
-                    groupData.schedule.forEach(item => {
-                        scheduleInfo += `- ${item.day}: ${item.startTime} - ${item.endTime}\n`;
-                    });
-                }
-                scheduleInfo += `Next rotation: Check daily`;
-                response = scheduleInfo;
-                clearSession(sessionId);
-            } else if (loadsheddingOption === '2') {
-                response = `CON Enter location name:`;
-                saveSession(sessionId, { action: 'search_location' });
-            } else if (loadsheddingOption === '3') {
-                response = `CON Enter your group (A/B/C/D):`;
-                saveSession(sessionId, { action: 'search_group' });
-            } else if (loadsheddingOption === '4') {
-                let fullSchedule = `END Full Loadshedding Schedule:\n`;
-                for (let groupKey in groups) {
-                    const groupData = groups[groupKey];
-                    if (groupData && groupData.schedule) {
-                        const times = groupData.schedule
-                            .map(s => `${s.day.slice(0,3)} ${s.startTime}-${s.endTime}`)
-                            .join(', ');
-                        fullSchedule += `Group ${groupKey}: ${times}\n`;
-                    }
-                }
-                response = fullSchedule;
-                clearSession(sessionId);
-            } else {
-                response = `END Invalid selection.`;
-                clearSession(sessionId);
-            }
-            break;
-        }
-        case 3: {
-            const sessionData = getSession(sessionId);
-            if (sessionData.action === 'search_location') {
-                const locationInput = textSegments[2].toLowerCase();
-                let foundDistrict = null;
-                for (let key in districts) {
-                    if (districts[key].name.toLowerCase() === locationInput) {
-                        foundDistrict = districts[key];
-                        break;
-                    }
-                }
+    const textSegments = text ? text.split('*') : [];
+    const stepCount = textSegments.length;
 
-                if (foundDistrict) {
-                    const groupData = groups[foundDistrict.group];
-                    let scheduleInfo = `END Schedule for ${foundDistrict.name}:\nGroup ${foundDistrict.group}\n`;
-                    if (groupData && groupData.schedule) {
-                        groupData.schedule.forEach(item => {
-                            scheduleInfo += `- ${item.day}: ${item.startTime} - ${item.endTime}\n`;
-                        });
-                    }
-                    scheduleInfo += `Last updated: Today`;
-                    response = scheduleInfo;
-                } else {
-                    response = `END Location not found.`;
+    const districts = getDistricts();
+    const groups = getGroups();
+    const sessionData = getSession(sessionId) || {};
+
+    // Helper: Safely format schedule items whether they are Objects or Strings
+    const formatSchedule = (scheduleArray) => {
+        if (!Array.isArray(scheduleArray) || scheduleArray.length === 0) {
+            return 'No scheduled outages recorded.\n';
+        }
+        return scheduleArray
+            .map((item) => {
+                if (typeof item === 'object' && item !== null) {
+                    const day = item.day || 'Scheduled';
+                    const start = item.startTime || item.start || '';
+                    const end = item.endTime || item.end || '';
+                    return `- ${day}: ${start} - ${end}`;
                 }
-                clearSession(sessionId);
-            } else if (sessionData.action === 'search_group') {
-                const groupInput = textSegments[2].toUpperCase();
-                if (groups[groupInput]) {
-                    const groupData = groups[groupInput];
-                    let scheduleInfo = `END Group ${groupInput} Schedule:\n`;
-                    if (groupData && groupData.schedule) {
-                        groupData.schedule.forEach(item => {
-                            scheduleInfo += `- ${item.day}: ${item.startTime} - ${item.endTime}\n`;
-                        });
-                    }
-                    scheduleInfo += `Next slot: Check daily`;
-                    response = scheduleInfo;
-                } else {
-                    response = `END Invalid group. Use A, B, C, or D.`;
-                }
+                return `- ${item}`;
+            })
+            .join('\n') + '\n';
+    };
+
+    if (stepCount === 0 || text === '') {
+        response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages\n3. Report a Fault`;
+    } 
+    // ==========================================
+    // OPTION 3: REPORT A FAULT
+    // ==========================================
+    else if (textSegments[0] === '3') {
+        const currentAction = sessionData.action;
+
+        if (!currentAction && stepCount === 1) {
+            response = `CON Fault Report\nEnter your full name:`;
+            saveSession(sessionId, { action: 'fault_name' });
+        } else if (currentAction === 'fault_name' && stepCount === 2) {
+            saveSession(sessionId, { action: 'fault_phone', customer_name: textSegments[1].trim() });
+            response = `CON Fault Report\nEnter your phone number:`;
+        } else if (currentAction === 'fault_phone' && stepCount === 3) {
+            saveSession(sessionId, { action: 'fault_category', phone: textSegments[2].trim() });
+            response = `CON Fault Report\nSelect fault category:\n1. No Power\n2. Meter Issues\n3. Hazardous Situations\n4. Voltage Issues\n5. Vandalism/Theft`;
+        } else if (currentAction === 'fault_category' && stepCount === 4) {
+            const categoryChoice = textSegments[3];
+            const category = faultCategories[categoryChoice];
+
+            if (!category) {
+                response = `END Invalid fault category.`;
                 clearSession(sessionId);
             } else {
-                response = `END Invalid action.`;
-                clearSession(sessionId);
+                saveSession(sessionId, {
+                    action: 'fault_detail',
+                    faultCategoryKey: categoryChoice,
+                    faultCategory: category.label
+                });
+                const optionsPrompt = category.options
+                    .map((option, index) => `${index + 1}. ${option.label}`)
+                    .join('\n');
+                response = `CON Fault Report\nSelect detail:\n${optionsPrompt}`;
             }
-            break;
-        }
-        default:
-            response = `END Invalid state routing.`;
+        } else if (currentAction === 'fault_detail' && stepCount === 5) {
+            const categoryKey = sessionData.faultCategoryKey;
+            const category = faultCategories[categoryKey];
+            const detailChoice = textSegments[4];
+            const selectedDetail = category?.options.find((option) => option.key === detailChoice);
+
+            if (!category || !selectedDetail) {
+                response = `END Invalid fault detail.`;
+                clearSession(sessionId);
+            } else {
+                saveSession(sessionId, {
+                    action: 'fault_location',
+                    fault: `${sessionData.faultCategory}: ${selectedDetail.label}`
+                });
+                response = `CON Fault Report\nEnter location:`;
+            }
+        } else if (currentAction === 'fault_location' && stepCount === 6) {
+            const payload = {
+                customer_name: sessionData.customer_name || '',
+                phone: sessionData.phone || '',
+                fault: sessionData.fault || '',
+                location: textSegments[5].trim(),
+                created_at: new Date().toISOString()
+            };
+
+            try {
+                await saveFaultReport(payload);
+                response = `END Fault report received. Thank you.`;
+            } catch (error) {
+                response = `END Unable to save fault report.`;
+            }
             clearSession(sessionId);
-            break;
-    }
+        } else {
+            response = `END Fault report cancelled.`;
+            clearSession(sessionId);
+        }
+    } 
+    // ==========================================
+    // OPTION 1: LOADSHEDDING OPTIONS
+    // ==========================================
+    else if (textSegments[0] === '1') {
+        switch (stepCount) {
+            case 1:
+                response = `CON Loadshedding Options:\n1. View your schedule\n2. Search location\n3. Search group\n4. View full schedule\n0. Back`;
+                break;
 
-        } else if (textSegments[0] === '2') {
-            switch (stepCount) {
-                case 1:
-                    response = `CON Power Outages:\n1. My outages\n2. View by district\n3. View today's schedule\n4. View all schedule\n0. Back`;
-                    break;
-                case 2: {
-                    const outageOption = textSegments[1];
-                    if (outageOption === '0') {
-                        response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
-                    } else if (outageOption === '1') {
-                        response = `END Your Recent Outages:\n- Jan 15: 4 hours\n- Jan 10: 3 hours\nTotal this month: 7 hours`;
-                        clearSession(sessionId);
-                    } else if (outageOption === '2') {
-                        response = `CON Enter district name:`;
-                        saveSession(sessionId, { action: 'search_district' });
-                    } else if (outageOption === '3') {
-                        response = `END Today's Outages:\n6:00 AM - 8:00 AM (Area A)\n2:00 PM - 4:00 PM (Area B)\n8:00 PM - 10:00 PM (Area C)`;
-                        clearSession(sessionId);
-                    } else if (outageOption === '4') {
-                        response = `END Full Outage Schedule:\nWeek 1: 15 hours total\nWeek 2: 12 hours total\nWeek 3: 18 hours total`;
-                        clearSession(sessionId);
+            case 2: {
+                const loadsheddingOption = textSegments[1];
+
+                if (loadsheddingOption === '0') {
+                    response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
+                } else if (loadsheddingOption === '1') {
+                    // Default / User's primary group (Group A)
+                    const groupData = groups['A'];
+                    let scheduleInfo = `END Your Loadshedding Schedule:\nGroup A\n`;
+                    
+                    if (groupData && groupData.schedule) {
+                        scheduleInfo += formatSchedule(groupData.schedule);
                     } else {
-                        response = `END Invalid selection.`;
-                        clearSession(sessionId);
+                        scheduleInfo += `No active schedule found.\n`;
                     }
-                    break;
+                    scheduleInfo += `Next rotation: Check daily`;
+                    response = scheduleInfo;
+                    clearSession(sessionId);
+                } else if (loadsheddingOption === '2') {
+                    response = `CON Enter location name:`;
+                    saveSession(sessionId, { action: 'search_location' });
+                } else if (loadsheddingOption === '3') {
+                    response = `CON Enter your group (A/B/C/D):`;
+                    saveSession(sessionId, { action: 'search_group' });
+                } else if (loadsheddingOption === '4') {
+                    let fullSchedule = `END Full Loadshedding Schedule:\n`;
+                    
+                    for (let groupKey in groups) {
+                        const groupData = groups[groupKey];
+                        if (groupData && groupData.schedule) {
+                            const times = groupData.schedule
+                                .map(s => typeof s === 'object' ? `${s.day.slice(0, 3)} ${s.startTime}-${s.endTime}` : s)
+                                .join(', ');
+                            fullSchedule += `Group ${groupKey}: ${times}\n`;
+                        }
+                    }
+                    response = fullSchedule;
+                    clearSession(sessionId);
+                } else {
+                    response = `END Invalid selection.`;
+                    clearSession(sessionId);
                 }
-                case 3: {
-                    const sessionDataPower = getSession(sessionId);
-                    if (sessionDataPower.action === 'search_district') {
-                        const districtInput = textSegments[2].trim();
-                        if (districtInput === '0') {
-                            response = `CON Power Outages:\n1. My outages\n2. View by district\n3. View today's schedule\n4. View all schedule\n0. Back`;
+                break;
+            }
+
+            case 3: {
+                const sessionData = getSession(sessionId);
+
+                if (sessionData.action === 'search_location') {
+                    const locationInput = textSegments[2].trim().toLowerCase();
+                    let foundDistrict = null;
+
+                    for (let key in districts) {
+                        if (districts[key].name && districts[key].name.toLowerCase() === locationInput) {
+                            foundDistrict = districts[key];
+                            break;
+                        }
+                    }
+
+                    if (foundDistrict) {
+                        const groupData = groups[foundDistrict.group];
+                        let scheduleInfo = `Schedule for ${foundDistrict.name}:\nGroup ${foundDistrict.group}\n`;
+                        
+                        if (groupData && groupData.schedule) {
+                            scheduleInfo += formatSchedule(groupData.schedule);
                         } else {
-                            let district = null;
-                            if (districts[districtInput]) {
-                                district = districts[districtInput];
-                            } else {
-                                const normalizedInput = districtInput.toLowerCase();
-                                for (const key in districts) {
-                                    if (districts[key].name.toLowerCase() === normalizedInput) {
-                                        district = districts[key];
-                                        break;
-                                    }
+                            scheduleInfo += `No schedule mapped.\n`;
+                        }
+                        
+                        scheduleInfo += `Last updated: Today`;
+                        response = `END ${scheduleInfo}`;
+                    } else {
+                        response = `END Location "${textSegments[2]}" not found.`;
+                    }
+                    clearSession(sessionId);
+                } else if (sessionData.action === 'search_group') {
+                    const groupInput = textSegments[2].trim().toUpperCase();
+
+                    if (groups[groupInput]) {
+                        const groupData = groups[groupInput];
+                        let scheduleInfo = `Group ${groupInput} Schedule:\n`;
+                        
+                        if (groupData && groupData.schedule) {
+                            scheduleInfo += formatSchedule(groupData.schedule);
+                        }
+                        
+                        scheduleInfo += `Next slot: Check daily`;
+                        response = `END ${scheduleInfo}`;
+                    } else {
+                        response = `END Invalid group. Use A, B, C, or D.`;
+                    }
+                    clearSession(sessionId);
+                } else {
+                    response = `END Invalid action.`;
+                    clearSession(sessionId);
+                }
+                break;
+            }
+
+            default:
+                response = `END Invalid state routing.`;
+                clearSession(sessionId);
+                break;
+        }
+    } 
+    // ==========================================
+    // OPTION 2: POWER OUTAGES
+    // ==========================================
+    else if (textSegments[0] === '2') {
+        switch (stepCount) {
+            case 1:
+                response = `CON Power Outages:\n1. My outages\n2. View by district\n3. View today's schedule\n4. View all schedule\n0. Back`;
+                break;
+
+            case 2: {
+                const outageOption = textSegments[1];
+
+                if (outageOption === '0') {
+                    response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages`;
+                } else if (outageOption === '1') {
+                    response = `END Your Recent Outages:\n- Jan 15: 4 hours\n- Jan 10: 3 hours\nTotal this month: 7 hours`;
+                    clearSession(sessionId);
+                } else if (outageOption === '2') {
+                    response = `CON Enter district name:`;
+                    saveSession(sessionId, { action: 'search_district' });
+                } else if (outageOption === '3') {
+                    response = `END Today's Outages:\n6:00 AM - 8:00 AM (Area A)\n2:00 PM - 4:00 PM (Area B)\n8:00 PM - 10:00 PM (Area C)`;
+                    clearSession(sessionId);
+                } else if (outageOption === '4') {
+                    response = `END Full Outage Schedule:\nWeek 1: 15 hours total\nWeek 2: 12 hours total\nWeek 3: 18 hours total`;
+                    clearSession(sessionId);
+                } else {
+                    response = `END Invalid selection.`;
+                    clearSession(sessionId);
+                }
+                break;
+            }
+
+            case 3: {
+                const sessionDataPower = getSession(sessionId);
+
+                if (sessionDataPower.action === 'search_district') {
+                    const districtInput = textSegments[2].trim();
+
+                    if (districtInput === '0') {
+                        response = `CON Power Outages:\n1. My outages\n2. View by district\n3. View today's schedule\n4. View all schedule\n0. Back`;
+                    } else {
+                        let district = null;
+
+                        if (districts[districtInput]) {
+                            district = districts[districtInput];
+                        } else {
+                            const normalizedInput = districtInput.toLowerCase();
+                            for (const key in districts) {
+                                if (districts[key].name && districts[key].name.toLowerCase() === normalizedInput) {
+                                    district = districts[key];
+                                    break;
                                 }
                             }
-
-                            if (district) {
-                                let outageInfo = `END Outages in ${district.name}:\n`;
-                                district.outageSchedule.forEach(schedule => {
-                                    outageInfo += `- ${schedule}\n`;
-                                });
-                                outageInfo += `Average duration: ${district.averageDuration}`;
-                                response = outageInfo;
-                            } else {
-                                response = `END Invalid district selection.`;
-                            }
                         }
-                        clearSession(sessionId);
-                    } else {
-                        response = `END Invalid action.`;
-                        clearSession(sessionId);
+
+                        if (district) {
+                            let outageInfo = `Outages in ${district.name}:\n`;
+                            if (Array.isArray(district.outageSchedule)) {
+                                outageInfo += formatSchedule(district.outageSchedule);
+                            } else {
+                                outageInfo += `No outages currently logged.\n`;
+                            }
+                            outageInfo += `Average duration: ${district.averageDuration || 'N/A'}`;
+                            response = `END ${outageInfo}`;
+                        } else {
+                            response = `END Invalid district selection.`;
+                        }
                     }
-                    break;
-                }
-                default:
-                    response = `END Invalid state routing.`;
                     clearSession(sessionId);
-                    break;
+                } else {
+                    response = `END Invalid action.`;
+                    clearSession(sessionId);
+                }
+                break;
             }
-        } else {
-            response = `END Option not recognized.`;
-            clearSession(sessionId);
+
+            default:
+                response = `END Invalid state routing.`;
+                clearSession(sessionId);
+                break;
         }
+    } else {
+        response = `END Option not recognized.`;
+        clearSession(sessionId);
+    }
 
-
-        res.set('Content-Type', 'text/plain');
-        res.send(response);
-    });
+    res.set('Content-Type', 'text/plain');
+    res.send(response);
+});
 
     return router;
 };
