@@ -318,8 +318,16 @@ const formatSchedule = (scheduleArray) => {
                         const groupData = groups[groupKey];
                         if (groupData && groupData.schedule) {
                             const times = groupData.schedule
-                                .map(s => typeof s === 'object' ? `${s.day.slice(0, 3)} ${s.startTime}-${s.endTime}` : s)
-                                .join(', ');
+// AFTER (Safe access):
+const times = groupData.schedule
+    .map(s => {
+        if (s && typeof s === 'object') {
+            const day = s.day ? s.day.slice(0, 3) : '';
+            return `${day} ${s.startTime || ''}-${s.endTime || ''}`.trim();
+        }
+        return String(s);
+    })
+    .join(', ');
                             fullSchedule += `Group ${groupKey}: ${times}\n`;
                         }
                     }
