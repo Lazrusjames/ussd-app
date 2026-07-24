@@ -1,0 +1,354 @@
+ALGORITHM: Process USSD Power Management Request
+
+INPUTS:
+    - req.body (Object containing: sessionId, serviceCode, phoneNumber, text)
+    - Databases/Objects: districts, groups, sessionData, faultCategories
+
+OUTPUT:
+    - HTTP Response (text/plain) containing the formatted USSD string starting with CON or END.
+
+PROCEDURES USED:
+    - getDistricts(): Returns districts data map
+    - getGroups(): Returns groups data map
+    - getSession(sessionId): Fetches current state data for the session
+    - saveSession(sessionId, data): Persists key-value state for the session
+    - clearSession(sessionId): Deletes session data from state storage
+    - saveFaultReport(payload): Asynchronously stores a submitted fault report
+    - formatSchedule(scheduleArray): Formats schedule objects/strings into readable lines
+
+--------------------------------------------------------------------------------
+
+HELPER FUNCTION: formatSchedule(scheduleArray)
+    IF scheduleArray IS NOT an Array OR length OF scheduleArray EQUALS 0 THEN:
+        RETURN "No scheduled outages recorded.\n"
+    END IF
+
+    SET formattedLines = []
+    FOR EACH item IN scheduleArray:
+        IF item IS Object AND item IS NOT NULL THEN:
+            SET day = item.day OR 'Scheduled'
+            SET start = item.startTime OR item.start OR ''
+            SET end = item.endTime OR item.end OR ''
+            APPEND "- " + day + ": " + start + " - " + end TO formattedLines
+        ELSE:
+            APPEND "- " + item TO formattedLines
+        END IF
+    END FOR
+
+    RETURN JOIN formattedLines WITH newline + "\n"
+END HELPER FUNCTION
+
+--------------------------------------------------------------------------------
+
+MAIN ALGORITHM:
+
+1. INITIALIZE VARIABLES:
+    - SET sessionId = req.body.sessionId
+    - SET text = req.body.text
+    - IF text EXISTS AND IS NOT EMPTY THEN:
+          SET textSegments = SPLIT text BY '*'
+      ELSE:
+          SET textSegments = []
+      END IF
+    - SET stepCount = LENGTH OF textSegments
+    - SET districts = EXECUTE getDistricts()
+    - SET groups = EXECUTE getGroups()
+    - SET sessionData = EXECUTE getSession(sessionId) OR {}
+    - SET response = ""
+
+2. ROUTING LOGIC:
+
+   =============================================================================
+   SECTION A: INITIAL MENU (stepCount == 0 OR text is empty)
+   =============================================================================
+   IF stepCount EQUALS 0 OR text EQUALS "" THEN:
+       SET response = "CON Power Management\n1. Check Loadshedding\n2. Check Power Outages\n3. Report a Fault"
+
+
+   =============================================================================
+   SECTION B: OPTION 3 - REPORT A FAULT (textSegments[0] == '3')
+   =============================================================================
+   ELSE IF textSegments[0] EQUALS '3' THEN:
+       SET currentAction = sessionData.action
+
+       CASE currentAction IS NULL AND stepCount EQUALS 1:
+           SET response = "CON Fault Report\nEnter your full name:"
+           EXECUTE saveSession(sessionId, { action: 'fault_name' })
+
+       CASE currentAction EQUALS 'fault_name' AND stepCount EQUALS 2:
+           EXECUTE saveSession(sessionId, { action: 'fault_phone', customer_name: TRIM(textSegments[1]) })
+           SET response = "CON Fault Report\nEnter your phone number:"
+
+       CASE currentAction EQUALS 'fault_phone' AND stepCount EQUALS 3:
+           EXECUTE saveSession(sessionId, { action: 'fault_category', phone: TRIM(textSegments[2]) })
+           SET response = "CON Fault Report\nSelect fault category:\n1. No Power\n2. Meter Issues\n3. Hazardous Situations\n4. Voltage Issues\n5. Vandalism/Theft"
+
+       CASE currentAction EQUALS 'fault_category' AND stepCount EQUALS 4:
+           SET categoryChoice = textSegments[3]
+           SET category = faultCategories[categoryChoice]
+
+           IF category IS NULL THEN:
+               SET response = "END Invalid fault category."
+               EXECUTE clearSession(sessionId)
+           ELSE:
+               EXECUTE saveSession(sessionId, {
+                   action: 'fault_detail',
+                   faultCategoryKey: categoryChoice,
+                   faultCategory: category.label
+               })
+               SET optionsPrompt = MAP category.options TO "index + 1. option.label" JOINED BY newline
+               SET response = "CON Fault Report\nSelect detail:\n" + optionsPrompt
+           END IF
+
+       CASE currentAction EQUALS 'fault_detail' AND stepCount EQUALS 5:
+           SET categoryKey = sessionData.faultCategoryKey
+           SET category = faultCategories[categoryKey]
+           SET detailChoice = textSegments[4]
+           SET selectedDetail = FIND option IN category.options WHERE option.key EQUALS detailChoice
+
+           IF category IS NULL OR selectedDetail IS NULL THEN:
+               SET response = "END Invalid fault detail."
+               EXECUTE clearSession(sessionId)
+           ELSE:
+               EXECUTE saveSession(sessionId, {
+                   action: 'fault_location',
+                   fault: sessionData.faultCategory + ": " + selectedDetail.label
+               })
+               SET response = "CON Fault Report\nEnter location:"
+           END IF
+
+       CASE currentAction EQUALS 'fault_location' AND stepCount EQUALS 6:
+           CONSTRUCT payload Object:
+               - customer_name = sessionData.customer_name OR ''
+               - phone = sessionData.phone OR ''
+               - fault = sessionData.fault OR ''
+               - location = TRIM(textSegments[5])
+               - created_at = CURRENT_TIMESTAMP_ISO_STRING()
+
+           TRY:
+               AWAIT saveFaultReport(payload)
+               SET response = "END Fault report received. Thank you."
+           CATCH Error:
+               SET response = "END Unable to save fault report."
+           END TRY
+
+           EXECUTE clearSession(sessionId)
+
+       DEFAULT (Out of sequence or unrecognized state):
+           SET response = "END Fault report cancelled."
+           EXECUTE clearSession(sessionId)
+
+
+   =============================================================================
+   SECTION C: OPTION 1 - LOADSHEDDING OPTIONS (textSegments[0] == '1')
+   =============================================================================
+   ELSE IF textSegments[0] EQUALS '1' THEN:
+       SWITCH stepCount:
+
+           CASE 1:
+               SET response = "CON Loadshedding Options:\n1. View your schedule\n2. Search location\n3. Search group\n4. View full schedule\n0. Back"
+
+           CASE 2:
+               SET loadsheddingOption = textSegments[1]
+
+               IF loadsheddingOption EQUALS '0' THEN:
+                   SET response = "CON Power Management\n1. Check Loadshedding\n2. Check Power Outages"
+
+               ELSE IF loadsheddingOption EQUALS '1' THEN:
+                   SET groupData = groups['A']
+                   SET scheduleInfo = "END Your Loadshedding Schedule:\nGroup A\n"
+
+                   IF groupData EXISTS AND groupData.schedule EXISTS THEN:
+                       SET scheduleInfo = scheduleInfo + EXECUTE formatSchedule(groupData.schedule)
+                   ELSE:
+                       SET scheduleInfo = scheduleInfo + "No active schedule found.\n"
+                   END IF
+
+                   SET scheduleInfo = scheduleInfo + "Next rotation: Check daily"
+                   SET response = scheduleInfo
+                   EXECUTE clearSession(sessionId)
+
+               ELSE IF loadsheddingOption EQUALS '2' THEN:
+                   SET response = "CON Enter location name:"
+                   EXECUTE saveSession(sessionId, { action: 'search_location' })
+
+               ELSE IF loadsheddingOption EQUALS '3' THEN:
+                   SET response = "CON Enter your group (A/B/C/D):"
+                   EXECUTE saveSession(sessionId, { action: 'search_group' })
+
+               ELSE IF loadsheddingOption EQUALS '4' THEN:
+                   SET fullSchedule = "END Full Loadshedding Schedule:\n"
+
+                   FOR EACH groupKey IN groups:
+                       SET groupData = groups[groupKey]
+                       IF groupData EXISTS AND groupData.schedule EXISTS THEN:
+                           SET times = MAP groupData.schedule TO formatted time string JOINED BY ", "
+                           SET fullSchedule = fullSchedule + "Group " + groupKey + ": " + times + "\n"
+                       END IF
+                   END FOR
+
+                   SET response = fullSchedule
+                   EXECUTE clearSession(sessionId)
+
+               ELSE:
+                   SET response = "END Invalid selection."
+                   EXECUTE clearSession(sessionId)
+               END IF
+
+           CASE 3:
+               SET sessionData = EXECUTE getSession(sessionId)
+
+               IF sessionData.action EQUALS 'search_location' THEN:
+                   SET locationInput = LOWERCASE(TRIM(textSegments[2]))
+                   SET foundDistrict = NULL
+
+                   FOR EACH key IN districts:
+                       IF districts[key].name EXISTS AND LOWERCASE(districts[key].name) EQUALS locationInput THEN:
+                           SET foundDistrict = districts[key]
+                           BREAK
+                       END IF
+                   END FOR
+
+                   IF foundDistrict IS NOT NULL THEN:
+                       SET groupData = groups[foundDistrict.group]
+                       SET scheduleInfo = "Schedule for " + foundDistrict.name + ":\nGroup " + foundDistrict.group + "\n"
+
+                       IF groupData EXISTS AND groupData.schedule EXISTS THEN:
+                           SET scheduleInfo = scheduleInfo + EXECUTE formatSchedule(groupData.schedule)
+                       ELSE:
+                           SET scheduleInfo = scheduleInfo + "No schedule mapped.\n"
+                       END IF
+
+                       SET scheduleInfo = scheduleInfo + "Last updated: Today"
+                       SET response = "END " + scheduleInfo
+                   ELSE:
+                       SET response = "END Location \"" + textSegments[2] + "\" not found."
+                   END IF
+
+                   EXECUTE clearSession(sessionId)
+
+               ELSE IF sessionData.action EQUALS 'search_group' THEN:
+                   SET groupInput = UPPERCASE(TRIM(textSegments[2]))
+
+                   IF groups[groupInput] EXISTS THEN:
+                       SET groupData = groups[groupInput]
+                       SET scheduleInfo = "Group " + groupInput + " Schedule:\n"
+
+                       IF groupData EXISTS AND groupData.schedule EXISTS THEN:
+                           SET scheduleInfo = scheduleInfo + EXECUTE formatSchedule(groupData.schedule)
+                       END IF
+
+                       SET scheduleInfo = scheduleInfo + "Next slot: Check daily"
+                       SET response = "END " + scheduleInfo
+                   ELSE:
+                       SET response = "END Invalid group. Use A, B, C, or D."
+                   END IF
+
+                   EXECUTE clearSession(sessionId)
+
+               ELSE:
+                   SET response = "END Invalid action."
+                   EXECUTE clearSession(sessionId)
+               END IF
+
+           DEFAULT:
+               SET response = "END Invalid state routing."
+               EXECUTE clearSession(sessionId)
+
+
+   =============================================================================
+   SECTION D: OPTION 2 - POWER OUTAGES (textSegments[0] == '2')
+   =============================================================================
+   ELSE IF textSegments[0] EQUALS '2' THEN:
+       SWITCH stepCount:
+
+           CASE 1:
+               SET response = "CON Power Outages:\n1. My outages\n2. View by district\n3. View today's schedule\n4. View all schedule\n0. Back"
+
+           CASE 2:
+               SET outageOption = textSegments[1]
+
+               IF outageOption EQUALS '0' THEN:
+                   SET response = "CON Power Management\n1. Check Loadshedding\n2. Check Power Outages"
+
+               ELSE IF outageOption EQUALS '1' THEN:
+                   SET response = "END Your Recent Outages:\n- Jan 15: 4 hours\n- Jan 10: 3 hours\nTotal this month: 7 hours"
+                   EXECUTE clearSession(sessionId)
+
+               ELSE IF outageOption EQUALS '2' THEN:
+                   SET response = "CON Enter district name:"
+                   EXECUTE saveSession(sessionId, { action: 'search_district' })
+
+               ELSE IF outageOption EQUALS '3' THEN:
+                   SET response = "END Today's Outages:\n6:00 AM - 8:00 AM (Area A)\n2:00 PM - 4:00 PM (Area B)\n8:00 PM - 10:00 PM (Area C)"
+                   EXECUTE clearSession(sessionId)
+
+               ELSE IF outageOption EQUALS '4' THEN:
+                   SET response = "END Full Outage Schedule:\nWeek 1: 15 hours total\nWeek 2: 12 hours total\nWeek 3: 18 hours total"
+                   EXECUTE clearSession(sessionId)
+
+               ELSE:
+                   SET response = "END Invalid selection."
+                   EXECUTE clearSession(sessionId)
+               END IF
+
+           CASE 3:
+               SET sessionDataPower = EXECUTE getSession(sessionId)
+
+               IF sessionDataPower.action EQUALS 'search_district' THEN:
+                   SET districtInput = TRIM(textSegments[2])
+
+                   IF districtInput EQUALS '0' THEN:
+                       SET response = "CON Power Outages:\n1. My outages\n2. View by district\n3. View today's schedule\n4. View all schedule\n0. Back"
+                   ELSE:
+                       SET district = NULL
+
+                       IF districts[districtInput] EXISTS THEN:
+                           SET district = districts[districtInput]
+                       ELSE:
+                           SET normalizedInput = LOWERCASE(districtInput)
+                           FOR EACH key IN districts:
+                               IF districts[key].name EXISTS AND LOWERCASE(districts[key].name) EQUALS normalizedInput THEN:
+                                   SET district = districts[key]
+                                   BREAK
+                               END IF
+                           END FOR
+                       END IF
+
+                       IF district IS NOT NULL THEN:
+                           SET outageInfo = "Outages in " + district.name + ":\n"
+                           IF district.outageSchedule IS Array THEN:
+                               SET outageInfo = outageInfo + EXECUTE formatSchedule(district.outageSchedule)
+                           ELSE:
+                               SET outageInfo = outageInfo + "No outages currently logged.\n"
+                           END IF
+                           SET outageInfo = outageInfo + "Average duration: " + (district.averageDuration OR 'N/A')
+                           SET response = "END " + outageInfo
+                       ELSE:
+                           SET response = "END Invalid district selection."
+                       END IF
+                   END IF
+
+                   EXECUTE clearSession(sessionId)
+
+               ELSE:
+                   SET response = "END Invalid action."
+                   EXECUTE clearSession(sessionId)
+               END IF
+
+           DEFAULT:
+               SET response = "END Invalid state routing."
+               EXECUTE clearSession(sessionId)
+
+
+   =============================================================================
+   SECTION E: UNRECOGNIZED OPTION
+   =============================================================================
+   ELSE:
+       SET response = "END Option not recognized."
+       EXECUTE clearSession(sessionId)
+   END IF
+
+3. RETURN RESPONSE:
+    - SET Response Content-Type TO 'text/plain'
+    - SEND response TO client

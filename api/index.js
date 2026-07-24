@@ -147,9 +147,11 @@ export const createApiRouter = ({
         });
 
         if (!district) {
-            return res.status(404).json({ message: 'District not found' });
+            return res.status(404).json({ message: 'District not found' }); // Function that responds with a message if the district is not found in the database
         }
 
+
+        // Returning the district information in JSON format
         res.json({
             id: district.id,
             name: district.name,
@@ -164,7 +166,7 @@ export const createApiRouter = ({
 
 // Definition of the function which is used to  handle the ussd functions
  router.post('/ussd', async (req, res) => {
-    const { sessionId, serviceCode, phoneNumber, text } = req.body;
+    const { sessionId, serviceCode, phoneNumber, text } = req.body; // \destructuring the request body to get the sessionId, serviceCode, phoneNumber and text from the request body
     let response = '';
 
     const textSegments = text ? text.split('*') : [];
@@ -172,7 +174,7 @@ export const createApiRouter = ({
 
     const districts = getDistricts();
     const groups = getGroups();
-    const sessionData = getSession(sessionId) || {};
+    const sessionData = getSession(sessionId) || {}; // Getting the session data for the current sessionId
 
     // Helper: Safely format schedule items whether they are Objects or Strings
     const formatSchedule = (scheduleArray) => {
@@ -191,6 +193,12 @@ export const createApiRouter = ({
             })
             .join('\n') + '\n';
     };
+
+
+
+    // ==========================================
+    // INITIAL MENU
+    // ==========================================
 
     if (stepCount === 0 || text === '') {
         response = `CON Power Management\n1. Check Loadshedding\n2. Check Power Outages\n3. Report a Fault`;
