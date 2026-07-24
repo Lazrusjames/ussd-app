@@ -176,24 +176,29 @@ export const createApiRouter = ({
     const groups = getGroups();
     const sessionData = getSession(sessionId) || {}; // Getting the session data for the current sessionId
 
-    // Helper: Safely format schedule items whether they are Objects or Strings
-    const formatSchedule = (scheduleArray) => {
-        if (!Array.isArray(scheduleArray) || scheduleArray.length === 0) {
-            return 'No scheduled outages recorded.\n';
-        }
-        return scheduleArray
-            .map((item) => {
-                if (typeof item === 'object' && item !== null) {
-                    const day = item.day || 'Scheduled';
-                    const start = item.startTime || item.start || '';
-                    const end = item.endTime || item.end || '';
-                    return `- ${day}: ${start} - ${end}`;
-                }
-                return `- ${item}`;
-            })
-            .join('\n') + '\n';
-    };
+// Helper: Safely format schedule items from MongoDB documents
+const formatSchedule = (scheduleArray) => {
+    if (!Array.isArray(scheduleArray) || scheduleArray.length === 0) {
+        return 'No scheduled outages recorded.\n';
+    }
+    return scheduleArray
+        .map((item) => {
+            if (item && typeof item === 'object') {
+                // Handle plain objects or MongoDB document fields
+                const day = item.day || 'Scheduled';
+                const start = item.startTime || item.start || '';
+                const end = item.endTime || item.end || '';
 
+                if (start && end) {
+                    return `- ${day}: ${start} - ${end}`;
+                } else if (day) {
+                    return `- ${day}`;
+                }
+            }
+            return `- ${String(item)}`;
+        })
+        .join('\n') + '\n';
+};
 
 
     // ==========================================
