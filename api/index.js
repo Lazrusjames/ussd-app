@@ -312,26 +312,37 @@ const formatSchedule = (scheduleArray) => {
                     response = `CON Enter your group (A/B/C/D):`;
                     saveSession(sessionId, { action: 'search_group' });
                 } else if (loadsheddingOption === '4') {
-                    let fullSchedule = `END Full Loadshedding Schedule:\n`;
-                    
-                    for (let groupKey in groups) {
-                        const groupData = groups[groupKey];
-                        if (groupData && groupData.schedule) {
-                            const times = groupData.schedule
-// AFTER (Safe access):
-const times = groupData.schedule
-    .map(s => {
-        if (s && typeof s === 'object') {
-            const day = s.day ? s.day.slice(0, 3) : '';
-            return `${day} ${s.startTime || ''}-${s.endTime || ''}`.trim();
-        }
-        return String(s);
-    })
-    .join(', ');
-                            fullSchedule += `Group ${groupKey}: ${times}\n`;
+  let fullSchedule = `END Full Loadshedding Schedule:\n`;
+
+    // 1. Handle if groups is an Array or Object from MongoDB
+    const groupsList = Array.isArray(groups) ? groups : Object.values(groups);
+
+    for (const groupData of groupsList) {
+        if (groupData && groupData.schedule) {
+            // Get group identifier (e.g. "A", "B") from document
+            const groupName = groupData.group || groupData.name || 'Unknown';
+
+            // Format schedule items cleanly
+            const times = Array.isArray(groupData.schedule)
+                ? groupData.schedule
+                    .map(s => {
+                        if (s && typeof s === 'object') {
+                            const day = s.day ? s.day.substring(0, 3) : '';
+                            const start = s.startTime || s.start || '';
+                            const end = s.endTime || s.end || '';
+                            return `${day} ${start}-${end}`.trim();
                         }
-                    }
-                    response = fullSchedule;
+                        return String(s);
+                    })
+                    .filter(Boolean)
+                    .join(', ')
+                : 'No slots';
+
+            fullSchedule += `Group ${groupName}: ${times}\n`;
+        }
+    }
+
+    response = fullSchedule;
                     clearSession(sessionId);
                 } else {
                     response = `END Invalid selection.`;
