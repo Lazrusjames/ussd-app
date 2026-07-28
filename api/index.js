@@ -311,46 +311,41 @@ const formatSchedule = (scheduleArray) => {
                 } else if (loadsheddingOption === '3') {
                     response = `CON Enter your group (A/B/C/D):`;
                     saveSession(sessionId, { action: 'search_group' });
-                } else if (loadsheddingOption === '4') {
-  let fullSchedule = `END Full Loadshedding Schedule:\n`;
+                }else if (loadsheddingOption === '4') {
+    let fullSchedule = `END Full Loadshedding Schedule:\n`;
 
-    // 1. Handle if groups is an Array or Object from MongoDB
     const groupsList = Array.isArray(groups) ? groups : Object.values(groups);
 
     for (const groupData of groupsList) {
-        if (groupData && groupData.schedule) {
-            // Get group identifier (e.g. "A", "B") from document
+        if (groupData) {
             const groupName = groupData.group || groupData.name || 'Unknown';
+            const schedule = groupData.schedule;
 
-            // Format schedule items cleanly
-  const times = Array.isArray(groupData.schedule)
-  ? groupData.schedule
-      .map(s => {
-          if (typeof s === 'string') return s;
+            if (Array.isArray(schedule) && schedule.length > 0) {
+                const formattedSlots = schedule
+                    .map((s) => {
+                        if (typeof s === 'string') return s;
+                        if (s && typeof s === 'object') {
+                            const day = s.day || '';
+                            const start = s.startTime || s.start || '';
+                            const end = s.endTime || s.end || '';
+                            return `${day} ${start}-${end}`.trim();
+                        }
+                        return '';
+                    })
+                    .filter(Boolean)
+                    .join(', ');
 
-          if (s && typeof s === 'object') {
-              return [
-                  s.day,
-                  s.startTime || s.start,
-                  s.endTime || s.end
-              ]
-              .filter(Boolean)
-              .join(' ');
-          }
-
-          return '';
-      })
-      .filter(Boolean)
-      .join(', ')
-  : 'No slots';
-
-            fullSchedule += `Group ${groupName}: ${times}\n`;
+                fullSchedule += `Group ${groupName}: ${formattedSlots}\n`;
+            } else {
+                fullSchedule += `Group ${groupName}: No slots\n`;
+            }
         }
     }
 
     response = fullSchedule;
-                    clearSession(sessionId);
-                } else {
+    clearSession(sessionId);
+} else {
                     response = `END Invalid selection.`;
                     clearSession(sessionId);
                 }
