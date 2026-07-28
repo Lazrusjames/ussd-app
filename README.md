@@ -1,25 +1,25 @@
 # USSD Power Management (Loadshedding) API
 
-This project provides a USSD backend that lets mobile users check loadshedding schedules and recent power outage information. The app exposes a USSD webhook and a small set of HTTP APIs backed by Google Cloud Firestore as the single source of truth.
+This project provides a USSD backend that lets mobile users check loadshedding schedules and recent power outage information. The app exposes a USSD webhook and a small set of HTTP APIs backed by MongoDB as the primary persistence layer, with a safe in-memory fallback when no MongoDB URI is configured.
 
 Key behaviours:
 - Serve a multi-step USSD flow (via `POST /ussd`) implementing menus for Loadshedding and Power Outages.
-- Store and read district and group outage schedules from Firestore (`districts` and `groups` collections).
-- Seed Firestore with initial district/group data on first run (server boot or first request in serverless environments).
+- Store and read district and group outage schedules from MongoDB collections (`districts` and `groups`).
+- Seed default district/group data on first run.
 - Provide monitoring and admin operations:
-  - `GET /districts` and `GET /groups` — read data from Firestore.
+  - `GET /districts` and `GET /groups` — read data from the active backend.
   - `GET /outages` and `GET /outages/:district` — query outage schedule data.
-  - `GET /health` — simple health check reporting Firestore availability.
-  - `POST /admin/refresh` — protected admin endpoint to refresh the in-memory cache from Firestore.
+  - `GET /health` — simple health check reporting backend availability.
+  - `POST /admin/refresh` — protected admin endpoint to refresh the in-memory cache from the active backend.
 
-The app uses the Firebase Admin SDK to talk to Firestore; deployments must provide credentials (see Deployment section).
+The app uses Mongoose to talk to MongoDB. If `MONGODB_URI` is absent, the app gracefully falls back to local in-memory data so tests and local development remain usable.
 
 ## Requirements
 
 - Node.js 16+ (tested with Node 18+ / 22+)
 - npm
-- Firestore enabled in a Google Cloud project and a service account with permissions to read/write Firestore
-- Environment variables: `FIREBASE_SERVICE_ACCOUNT` (recommended) and `ADMIN_SECRET` (optional, used to protect admin endpoints)
+- MongoDB instance reachable from the app
+- Environment variables: `MONGODB_URI`, `MONGODB_DB` (optional), and `ADMIN_SECRET` (optional, used to protect admin endpoints)
 
 ## Installation
 
@@ -31,7 +31,7 @@ cd ussd-app
 npm install
 ```
 
-2. Provide Firebase credentials for the Admin SDK. Recommended: set the full service account JSON into the `FIREBASE_SERVICE_ACCOUNT` environment variable (see Deployment section). Alternatively place `serviceAccountKey.json` in the project root only for local testing.
+2. Copy `.env.example` to `.env` and configure your MongoDB connection details.
 
 3. (Optional) Set an admin secret to protect the refresh endpoint:
 
@@ -54,8 +54,8 @@ node app.js
 ```
 
 Notes:
-- On direct runs the app seeds Firestore (if empty) then starts the server.
-- On serverless deployments (Vercel, Cloud Run) the app performs a request-time initialization to ensure Firestore is ready before serving API calls.
+- On direct runs the app initializes the configured backend and seeds default records when needed.
+- If MongoDB is not configured, the server still starts and serves the API using local in-memory fallback data.
 
 ## API Endpoints
 
@@ -66,39 +66,35 @@ Main endpoints (examples):
 - `GET /groups` — return all group schedules (JSON) from Firestore.
 - `GET /outages` — summary of outages by district.
 - `GET /outages/:district` — outages for a specific district.
-- `GET /health` — status and Firestore availability.
-- `POST /admin/refresh` — protected admin action; refreshes the in-memory cache from Firestore (requires `ADMIN_SECRET` header or body secret).
+- `GET /health` — status and backend availability.
+- `POST /admin/refresh` — protected admin action; refreshes the in-memory cache from the active backend (requires `ADMIN_SECRET` header or body secret).
 
 ## Deployment (Vercel / Serverless)
 
 Steps to deploy successfully on Vercel or other serverless platforms:
 
-1. Enable the Cloud Firestore API for your Google Cloud project.
-2. Create a service account with Firestore access (e.g. `roles/firestore.admin`) and obtain the JSON key.
-3. On Vercel add the service account JSON as the environment variable `FIREBASE_SERVICE_ACCOUNT` (value is the raw JSON). Example with Vercel CLI:
+1. Provision a MongoDB instance (Atlas or another managed MongoDB service).
+2. Set the connection string in the deployment environment as `MONGODB_URI`.
+3. Optionally set `MONGODB_DB` to the database name you want the app to use.
+4. Set `ADMIN_SECRET` if you want to protect the admin refresh route.
+
+Example:
 
 ```bash
-vercel env add FIREBASE_SERVICE_ACCOUNT production
+vercel env add MONGODB_URI production
+vercel env add MONGODB_DB production
+vercel env add ADMIN_SECRET production
 ```
-
-Paste the JSON when prompted and redeploy.
-
-Notes:
-
-- Ensure the service account has permissions to read/write Firestore.
-- When running on GCP (Cloud Run, App Engine) you can rely on Application Default Credentials (ADC) instead of `FIREBASE_SERVICE_ACCOUNT`.
 
 Health-check endpoint:
 
-- `GET /health` — returns JSON indicating whether Firestore is available and initialized. Use this endpoint for deployment health checks.
+- `GET /health` — returns JSON indicating whether the MongoDB backend is available and initialized. Use this endpoint for deployment health checks.
 
 ## Support
 
 If you need help:
 
-- Verify Firestore API is enabled in the Google Cloud Console for your project.
-- Check that `FIREBASE_SERVICE_ACCOUNT` contains valid JSON and the service account has Firestore access.
+- Verify `MONGODB_URI` is valid and the MongoDB user has read/write access.
+- Confirm the MongoDB service is reachable from your deployment environment.
 - Confirm `ADMIN_SECRET` is set if you plan to use `/admin/refresh`.
-
-If you'd like, I can add an example script to call the admin refresh endpoint and provide automated deployment steps for Vercel.
 

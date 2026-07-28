@@ -1,59 +1,19 @@
 import express from 'express';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createApiRouter } from './api/index.js';
-import { getApps, initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config();
+
+import { createApiRouter } from './api/index.js';   //
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
-let serviceAccount = null;
-
-// Support providing the service account JSON via environment variable (recommended for deployments)
-if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-  try {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  } catch (err) {
-    console.error('Invalid FIREBASE_SERVICE_ACCOUNT JSON:', err.message);
-  }
-} else {
-  // Fallback to local file if present
-  try {
-    if (fs.existsSync(serviceAccountPath)) {
-      serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
-    }
-  } catch (err) {
-    console.error('Failed to read local serviceAccountKey.json:', err.message);
-  }
-}
-
-
-
-
-let db = null;
-
-try {
-  let adminApp;
-  if (serviceAccount) {
-    adminApp = getApps().length ? getApps()[0] : initializeApp({
-      credential: cert(serviceAccount)
-    });
-  } else {
-    // Try initialize with default credentials (useful when running inside GCP)
-    adminApp = getApps().length ? getApps()[0] : initializeApp();
-  }
-  db = getFirestore(adminApp);
-} catch (error) {
-  console.warn('Firebase Admin initialization failed; Firestore unavailable:', error.message);
-}
-
 const DISTRICTS_COLLECTION = 'districts';
 const GROUPS_COLLECTION = 'groups';
-const FAULT_REPORTS_COLLECTION = 'fault_reports';
+const FAULT_REPORTS_COLLECTION = 'faults';
 
 const DEFAULT_DISTRICTS = {
   1: {
@@ -114,99 +74,196 @@ const DEFAULT_GROUPS = {
 };
 
 // Global references that will hold our runtime data
-let DISTRICTS = {};
-let GROUPS = {};
+let DISTRICTS = { ...DEFAULT_DISTRICTS };
+let GROUPS = { ...DEFAULT_GROUPS };
+const MEMORY_FAULT_REPORTS = [];
+let mongoAvailable = false;
+let mongoInitializationError = null;
+
+const districtSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true },
+  name: { type: String, required: true },
+  region: { type: String, required: true },
+  group: { type: String, required: true },
+  outageSchedule: { type: [String], default: [] },
+  averageDuration: { type: String, default: '' }
+}, { versionKey: false, collection: DISTRICTS_COLLECTION });
+
+const groupSchema = new mongoose.Schema({
+  group: { type: String, required: true, unique: true },
+  schedule: { type: [String], default: [] },
+  description: { type: String, default: '' }
+}, { versionKey: false, collection: GROUPS_COLLECTION });
+
+const faultReportSchema = new mongoose.Schema({
+  customer_name: { type: String, default: '' },
+  phone: { type: String, default: '' },
+  fault: { type: String, default: '' },
+  location: { type: String, default: '' },
+  created_at: { type: String, required: true },
+  created_date: { type: String, required: true }
+}, { versionKey: false, collection: FAULT_REPORTS_COLLECTION });
+
+const District = mongoose.models.District || mongoose.model('District', districtSchema);
+const Group = mongoose.models.Group || mongoose.model('Group', groupSchema);
+const FaultReport = mongoose.models.FaultReport || mongoose.model('FaultReport', faultReportSchema);
 
 const getCollectionData = async (collectionName) => {
-    if (!db) {
-        throw new Error('Firestore is not initialized');
-    }
+  if (!mongoAvailable) {
+    return collectionName === DISTRICTS_COLLECTION ? { ...DEFAULT_DISTRICTS } : { ...DEFAULT_GROUPS };
+  }
 
-    const snapshot = await db.collection(collectionName).get();
-    const data = {};
-    snapshot.forEach((doc) => {
-        data[doc.id] = doc.data();
-    });
-    return data;
+  if (collectionName === DISTRICTS_COLLECTION) {
+    const documents = await District.find({}).lean();
+    return documents.reduce((collection, document) => {
+      collection[document.id] = document;
+      return collection;
+    }, {});
+  }
+
+  if (collectionName === GROUPS_COLLECTION) {
+    const documents = await Group.find({}).lean();
+    return documents.reduce((collection, document) => {
+      collection[document.group] = document;
+      return collection;
+    }, {});
+  }
+
+  return {};
 };
 
 const writeCollectionData = async (collectionName, data) => {
-    if (!db) {
-        throw new Error('Firestore is not initialized');
+  if (!mongoAvailable) {
+    if (collectionName === DISTRICTS_COLLECTION) {
+      DISTRICTS = { ...data };
     }
+    if (collectionName === GROUPS_COLLECTION) {
+      GROUPS = { ...data };
+    }
+    return;
+  }
 
-    const batch = db.batch();
-    for (const [id, value] of Object.entries(data)) {
-        const ref = db.collection(collectionName).doc(id.toString());
-        batch.set(ref, value);
-    }
-    await batch.commit();
+  const items = Object.values(data);
+  if (collectionName === DISTRICTS_COLLECTION) {
+    await District.deleteMany({});
+    await District.insertMany(items);
+  }
+  if (collectionName === GROUPS_COLLECTION) {
+    await Group.deleteMany({});
+    await Group.insertMany(items);
+  }
 };
 
 const seedCollectionsIfEmpty = async () => {
-    if (!db) {
-        throw new Error('Firestore is not initialized');
-    }
-
-    const districtsSnapshot = await db.collection(DISTRICTS_COLLECTION).limit(1).get();
-    if (districtsSnapshot.empty) {
-        await writeCollectionData(DISTRICTS_COLLECTION, DEFAULT_DISTRICTS);
-    }
-
-    const groupsSnapshot = await db.collection(GROUPS_COLLECTION).limit(1).get();
-    if (groupsSnapshot.empty) {
-        await writeCollectionData(GROUPS_COLLECTION, DEFAULT_GROUPS);
-    }
-};
-
-const getFaultReports = async () => {
-  if (!db) {
-    return [];
+  if (!mongoAvailable) {
+    return;
   }
 
-  const snapshot = await db.collection(FAULT_REPORTS_COLLECTION).get();
-  const reports = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-  return reports.sort((a, b) => {
-    const aDate = new Date(a.created_at || a.created_date || 0).getTime();
-    const bDate = new Date(b.created_at || b.created_date || 0).getTime();
-    return bDate - aDate;
-  });
+  const [districtCount, groupCount] = await Promise.all([
+    District.countDocuments(),
+    Group.countDocuments()
+  ]);
+
+  if (districtCount === 0) {
+    await District.insertMany(Object.values(DEFAULT_DISTRICTS));
+  }
+
+  if (groupCount === 0) {
+    await Group.insertMany(Object.values(DEFAULT_GROUPS));
+  }
+};
+
+const refreshMongoData = async () => {
+  if (!mongoAvailable) {
+    DISTRICTS = { ...DEFAULT_DISTRICTS };
+    GROUPS = { ...DEFAULT_GROUPS };
+    return;
+  }
+
+  const [districts, groups] = await Promise.all([
+    getCollectionData(DISTRICTS_COLLECTION),
+    getCollectionData(GROUPS_COLLECTION)
+  ]);
+
+  DISTRICTS = districts;
+  GROUPS = groups;
+};
+
+const initializeMongoBackend = async () => {
+  const mongoUri = process.env.MONGO_URI;
+  if (!mongoUri) {
+    mongoAvailable = false;
+    mongoInitializationError = null;
+    return;
+  }
+
+  try {
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(mongoUri, {
+        dbName: process.env.MONGODB_DB || 'ussd'
+      });
+    }
+
+    mongoAvailable = true;
+    mongoInitializationError = null;
+    await seedCollectionsIfEmpty();
+    await refreshMongoData();
+    console.log('MongoDB connected and synced successfully.');
+  } catch (error) {
+    mongoAvailable = false;
+    mongoInitializationError = error.message;
+    console.warn('MongoDB initialization failed; using in-memory fallback:', error.message);
+    DISTRICTS = { ...DEFAULT_DISTRICTS };
+    GROUPS = { ...DEFAULT_GROUPS };
+  }
+};
+
+const getFaults = async () => {
+  if (!mongoAvailable) {
+    return [...MEMORY_FAULT_REPORTS].sort((a, b) => {
+      const aDate = new Date(a.created_at || a.created_date || 0).getTime();
+      const bDate = new Date(b.created_at || b.created_date || 0).getTime();
+      return bDate - aDate;
+    });
+  }
+
+  const reports = await FaultReport.find({}).sort({ created_at: -1 }).lean();
+  return reports.map((report) => ({ id: report._id.toString(), ...report }));
 };
 
 const saveFaultReport = async (report) => {
-  if (!db) {
-    return report;
-  }
-
-  const ref = db.collection(FAULT_REPORTS_COLLECTION).doc();
   const payload = {
     ...report,
     created_at: report.created_at || report.created_date || new Date().toISOString(),
     created_date: report.created_date || report.created_at || new Date().toISOString()
   };
-  await ref.set(payload);
-  return { id: ref.id, ...payload };
+
+  if (!mongoAvailable) {
+    MEMORY_FAULT_REPORTS.push(payload);
+    return { id: `memory-${MEMORY_FAULT_REPORTS.length}`, ...payload };
+  }
+
+  const saved = await FaultReport.create(payload);
+  return { id: saved._id.toString(), ...saved.toObject() };
 };
 
-const refreshFirebaseData = async () => {
-    const [districts, groups] = await Promise.all([
-        getCollectionData(DISTRICTS_COLLECTION),
-        getCollectionData(GROUPS_COLLECTION)
-    ]);
-
-    DISTRICTS = districts;
-    GROUPS = groups;
+const refreshDatabaseData = async () => {
+  if (mongoAvailable) {
+    await refreshMongoData();
+  } else {
+    DISTRICTS = { ...DEFAULT_DISTRICTS };
+    GROUPS = { ...DEFAULT_GROUPS };
+  }
 };
 
 // --- THIS RUNS ONLY ONCE AT SERVER BOOT ---
 const bootUpDatabase = async () => {
-    if (!db) {
-        throw new Error('Firestore is not initialized');
-    }
-
-    await seedCollectionsIfEmpty();
-    await refreshFirebaseData();
-    console.log('Firebase Database connected and synced successfully.');
+  await initializeMongoBackend();
+  if (!mongoAvailable) {
+    DISTRICTS = { ...DEFAULT_DISTRICTS };
+    GROUPS = { ...DEFAULT_GROUPS };
+  }
+  console.log(`Database ready using ${mongoAvailable ? 'MongoDB' : 'in-memory fallback'}.`);
 };
 
 // Standard Express setup
@@ -222,16 +279,15 @@ const saveSession = (sessionId, data) => {
 const getSession = (sessionId) => sessionStore[sessionId] || {};
 const clearSession = (sessionId) => { delete sessionStore[sessionId]; };
 
-// Ensure Firestore data is initialized on serverless environments 
-let _firestoreInitialized = false;
+// Ensure the configured backend is initialized before serving requests
+let _databaseInitialized = false;
 app.use(async (req, res, next) => {
-  if (!db) return next();
-  if (!_firestoreInitialized) {
+  if (!_databaseInitialized) {
     try {
       await bootUpDatabase();
-      _firestoreInitialized = true;
+      _databaseInitialized = true;
     } catch (err) {
-      console.error('Failed to initialize Firestore on request:', err.message);
+      console.error('Failed to initialize database backend on request:', err.message);
       return next();
     }
   }
@@ -245,7 +301,7 @@ app.use(createApiRouter({
   getSession,
   saveSession,
   clearSession,
-  getFaultReports,
+  getFaults,
   saveFaultReport
 }));
 
@@ -253,32 +309,30 @@ app.use(createApiRouter({
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    firestoreAvailable: !!db,
-    firestoreInitialized: !!_firestoreInitialized
+    database: mongoAvailable ? 'mongodb' : 'memory',
+    databaseAvailable: mongoAvailable || true,
+    databaseInitialized: !!_databaseInitialized,
+    mongoInitializationError
   });
 });
 
 // Per-request data-source header and simple logging
 app.use((req, res, next) => {
-  const dataSource = (db && _firestoreInitialized) ? 'firestore' : 'unavailable';
+  const dataSource = mongoAvailable ? 'mongodb' : 'memory';
   res.set('X-Data-Source', dataSource);
   console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl} dataSource=${dataSource}`);
   next();
 });
 
-// Admin endpoint to refresh Firestore cache (protected by ADMIN_SECRET env var)
+// Admin endpoint to refresh the active backend cache (protected by ADMIN_SECRET env var)
 app.post('/admin/refresh', async (req, res) => {
   const secret = req.headers['x-admin-secret'] || req.body?.secret;
   if (!process.env.ADMIN_SECRET || secret !== process.env.ADMIN_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (!db) {
-    return res.status(503).json({ error: 'Firestore not initialized' });
-  }
-
   try {
-    await refreshFirebaseData();
+    await refreshDatabaseData();
     return res.json({ ok: true, message: 'Cache refreshed' });
   } catch (err) {
     console.error('Admin refresh failed:', err);
@@ -301,5 +355,6 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL && isDirectRun) {
     });
 }
 
-export { app, bootUpDatabase, writeCollectionData, getFaultReports, saveFaultReport };
+// for deployment
+export { app, bootUpDatabase, writeCollectionData, getFaults, saveFaultReport };
 export default app;
