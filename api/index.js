@@ -263,6 +263,7 @@ const formatSchedule = (scheduleArray) => {
                 phone: sessionData.phone || '',
                 fault: sessionData.fault || '',
                 location: textSegments[5].trim(),
+                created_at: new Date().toISOString()
                
             };
 
