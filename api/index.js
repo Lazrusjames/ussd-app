@@ -323,20 +323,26 @@ const formatSchedule = (scheduleArray) => {
             const groupName = groupData.group || groupData.name || 'Unknown';
 
             // Format schedule items cleanly
-            const times = Array.isArray(groupData.schedule)
-                ? groupData.schedule
-                    .map(s => {
-                        if (s && typeof s === 'object') {
-                            const day = s.day ? s.day.substring(0, 3) : '';
-                            const start = s.startTime || s.start || '';
-                            const end = s.endTime || s.end || '';
-                            return `${day} ${start}-${end}`.trim();
-                        }
-                        return String(s);
-                    })
-                    .filter(Boolean)
-                    .join(', ')
-                : 'No slots';
+  const times = Array.isArray(groupData.schedule)
+  ? groupData.schedule
+      .map(s => {
+          if (typeof s === 'string') return s;
+
+          if (s && typeof s === 'object') {
+              return [
+                  s.day,
+                  s.startTime || s.start,
+                  s.endTime || s.end
+              ]
+              .filter(Boolean)
+              .join(' ');
+          }
+
+          return '';
+      })
+      .filter(Boolean)
+      .join(', ')
+  : 'No slots';
 
             fullSchedule += `Group ${groupName}: ${times}\n`;
         }
