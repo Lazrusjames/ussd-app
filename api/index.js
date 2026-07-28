@@ -120,21 +120,189 @@ export const createApiRouter = ({
     });
 
 
-    //DEFITION OF THE FUNCTION THAT RETURNS  OUTAGES FROM ALL DISTRICTS
-    router.get('/schedules', (req, res) => {
-        const outagesByDistrict = Object.values(getDistricts()).map((district) => ({
+ // DEFINITION OF THE ROUTE THAT RETURNS SCHEDULES FOR ALL GROUPS
+router.get('/schedules', (req, res) => {
+    try {
+        const rawGroups = getGroups();
+        
+        // Convert groups to an array whether getGroups() returns an object or array
+        const groupsList = Array.isArray(rawGroups) 
+            ? rawGroups 
+            : Object.entries(rawGroups).map(([key, val]) => ({ groupKey: key, ...val }));
+
+        const allGroupSchedules = groupsList.map((group) => {
+            const groupName = group.group || group.groupKey || group.name || group.id || 'Unknown';
+            
+            return {
+                group: groupName,
+                schedule: Array.isArray(group.schedule) ? group.schedule : [],
+                updatedAt: group.updatedAt || new Date().toISOString()
+            };
+        });
+
+        res.json(allGroupSchedules);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+
+
+// GET SCHEDULE FOR A SINGLE DISTRICT BY NAME OR ID
+router.get('/schedules/districts/:districtParam', (req, res) => {
+    try {
+        const searchParam = req.params.districtParam.trim().toLowerCase();
+        const rawDistricts = getDistricts();
+        const rawGroups = getGroups();
+
+        const districtsList = Array.isArray(rawDistricts)
+            ? rawDistricts
+            : Object.values(rawDistricts);
+
+        // Find district matching by name or id
+        const district = districtsList.find((d) => {
+            const nameMatch = d.name && d.name.toLowerCase() === searchParam;
+            const idMatch = d.id && String(d.id).toLowerCase() === searchParam;
+            return nameMatch || idMatch;
+        });
+
+        if (!district) {
+            return res.status(404).json({ message: `District '${req.params.districtParam}' not found.` });
+        }
+
+        const groupKey = (district.group || '').toUpperCase();
+
+        // Resolve group schedule
+        let groupSchedule = [];
+        if (rawGroups && rawGroups[groupKey]) {
+            groupSchedule = rawGroups[groupKey].schedule || [];
+        } else if (Array.isArray(rawGroups)) {
+            const foundGroup = rawGroups.find(
+                (g) => (g.group || g.groupKey || g.id || '').toUpperCase() === groupKey
+            );
+            groupSchedule = foundGroup?.schedule || [];
+        } else {
+            groupSchedule = district.outageSchedule || [];
+        }
+
+        res.json({
             id: district.id,
-            name: district.name,
+            district: district.name,
             region: district.region,
             group: district.group,
-            outageSchedule: district.outageSchedule,
-            averageDuration: district.averageDuration
-        }));
+            averageDuration: district.averageDuration || 'N/A',
+            schedule: groupSchedule
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
 
-        res.json(outagesByDistrict);
+
+// GET SCHEDULES FOR ALL DISTRICTS
+router.get('/schedules/districts', (req, res) => {
+    try {
+        const rawDistricts = getDistricts();
+        const rawGroups = getGroups();
+
+        const districtsList = Array.isArray(rawDistricts)
+            ? rawDistricts
+            : Object.values(rawDistricts);
+
+        const districtSchedules = districtsList.map((district) => {
+            const groupKey = (district.group || '').toUpperCase();
+            
+            // Resolve schedule from group data or fall back to district's internal schedule
+            let groupSchedule = [];
+            if (rawGroups && rawGroups[groupKey]) {
+                groupSchedule = rawGroups[groupKey].schedule || [];
+            } else if (Array.isArray(rawGroups)) {
+                const foundGroup = rawGroups.find(
+                    (g) => (g.group || g.groupKey || g.id || '').toUpperCase() === groupKey
+                );
+                groupSchedule = foundGroup?.schedule || [];
+            } else {
+                groupSchedule = district.outageSchedule || [];
+            }
+
+            return {
+                id: district.id,
+                district: district.name,
+                region: district.region,
+                group: district.group,
+                averageDuration: district.averageDuration || 'N/A',
+                schedule: groupSchedule
+            };
+        });
+
+        res.json(districtSchedules);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// GET ALL DISTRICTS BELONGING TO A PARTICULAR GROUP
+router.get('/groups/:group/districts', (req, res) => {
+    try {
+        const groupInput = req.params.group.trim().toUpperCase();
+        const rawDistricts = getDistricts();
+
+        const districtsList = Array.isArray(rawDistricts)
+            ? rawDistricts
+            : Object.values(rawDistricts);
+
+        // Filter districts that belong to the requested group
+        const matchingDistricts = districtsList
+            .filter((d) => (d.group || '').trim().toUpperCase() === groupInput)
+            .map((d) => ({
+                id: d.id,
+                name: d.name,
+                region: d.region,
+                group: d.group,
+                averageDuration: d.averageDuration || 'N/A'
+            }));
+
+        if (matchingDistricts.length === 0) {
+            return res.status(404).json({
+                message: `No districts found for Group '${groupInput}'.`
+            });
+        }
+
+        res.json({
+            group: groupInput,
+            totalDistricts: matchingDistricts.length,
+            districts: matchingDistricts
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+
+
+
+    router.get('/groups/:groupId/schedules', (req, res) => {
+        const groupId = req.params.groupId.toUpperCase();
+        const groups = getGroups();
+
+        // Support both object mapping ({ A: {...} }) and array representation
+        let groupData = null;
+        if (Array.isArray(groups)) {
+            groupData = groups.find((g) => (g.group || g.id || g.name || '').toUpperCase() === groupId);
+        } else {
+            groupData = groups[groupId] || Object.values(groups).find((g) => (g.group || g.id || '').toUpperCase() === groupId);
+        }
+
+        if (!groupData) {
+            return res.status(404).json({ message: `Group '${groupId}' not found.` });
+        }
+
+        res.json({
+            group: groupId,
+            schedule: groupData.schedule || [],
+            updatedAt: groupData.updatedAt || new Date().toISOString()
+        });
     });
-
-
 
     //DEFINITION OF THE ROUTER THAT RETURNS OUTAGE FOR SPECIFIC DISTRICTS
     router.get('/schedules/:district', (req, res) => {
