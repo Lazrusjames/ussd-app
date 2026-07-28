@@ -121,7 +121,7 @@ export const createApiRouter = ({
 
 
     //DEFITION OF THE FUNCTION THAT RETURNS  OUTAGES FROM ALL DISTRICTS
-    router.get('/outages', (req, res) => {
+    router.get('/schedules', (req, res) => {
         const outagesByDistrict = Object.values(getDistricts()).map((district) => ({
             id: district.id,
             name: district.name,
@@ -137,7 +137,7 @@ export const createApiRouter = ({
 
 
     //DEFINITION OF THE ROUTER THAT RETURNS OUTAGE FOR SPECIFIC DISTRICTS
-    router.get('/outages/:district', (req, res) => {
+    router.get('/schedules/:district', (req, res) => {
 
         const districtInput = req.params.district.toLowerCase(); // Getting inputs from the url and turning it to lowercases
         const districts = getDistricts(); // collecting districts to function which read all districts from the database
