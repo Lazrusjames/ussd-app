@@ -218,7 +218,7 @@ const initializeMongoBackend = async () => {
   }
 };
 
-const getFaultReports = async () => {
+const getFaults = async () => {
   if (!mongoAvailable) {
     return [...MEMORY_FAULT_REPORTS].sort((a, b) => {
       const aDate = new Date(a.created_at || a.created_date || 0).getTime();
@@ -301,7 +301,7 @@ app.use(createApiRouter({
   getSession,
   saveSession,
   clearSession,
-  getFaultReports,
+  getFaults,
   saveFaultReport
 }));
 
@@ -356,5 +356,5 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL && isDirectRun) {
 }
 
 // for deployment
-export { app, bootUpDatabase, writeCollectionData, getFaultReports, saveFaultReport };
+export { app, bootUpDatabase, writeCollectionData, getFaults, saveFaultReport };
 export default app;
