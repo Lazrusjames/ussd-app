@@ -450,7 +450,7 @@ const formatSchedule = (scheduleArray) => {
             };
 
             try {
-                await saveFaultReport(payload);
+                await saveFault(payload);
                 response = `END Fault report received. Thank you.`;
             } catch (error) {
                 response = `END Unable to save fault report.`;
