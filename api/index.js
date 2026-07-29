@@ -1,6 +1,7 @@
 
 import express from 'express';
 
+
 export const createApiRouter = ({
     getDistricts,
     getGroups,
@@ -8,12 +9,19 @@ export const createApiRouter = ({
     saveSession,
     clearSession,
     getFaults,
-    saveFault
+    saveFaultFault
 }) => {
 
-    // CREATION OF ROUTER OBJECT TO BE USED FOR PUBLISHING THE APIS
+// Initialize Express router instance
     const router = express.Router();
 
+// ==========================================
+    // DATA LOOKUP / CONSTANTS
+    // ==========================================
+
+    /**
+     * Pre-defined structure of categorized fault options for reporting.
+     */
 
 
     // GET Requesting function returning response after entry of /districts
@@ -76,7 +84,13 @@ export const createApiRouter = ({
 
     //END OF THE FAULT CATEGORIES
 
+// ==========================================
+    // ROUTE HANDLER DEFINITIONS
+    // ==========================================
 
+    /**
+     * Handler to fetch all recorded fault reports.
+     */
 
     // DEFINING getFAULTSROUTE FUNCTION THAT RETURNS ALL FAULTS
     const getFaultsRoute = async (req, res) => {
