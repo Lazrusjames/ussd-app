@@ -358,7 +358,7 @@ const getFaults = async () => {
 
 
 
-const saveFaultReport = async (report) => {
+const saveFault = async (report) => {
   const payload = {
     ...report,
     created_at: report.created_at || report.created_date || new Date().toISOString(),
@@ -429,7 +429,7 @@ app.use(createApiRouter({
   saveSession,
   clearSession,
   getFaults,
-  saveFaultReport
+  saveFault
 }));
 
 // Health check endpoint for deployments and monitoring
