@@ -9,7 +9,7 @@ export const createApiRouter = ({
     saveSession,
     clearSession,
     getFaults,
-    saveFaultFault
+    saveFault
 }) => {
 
 // Initialize Express router instance
@@ -116,7 +116,7 @@ export const createApiRouter = ({
                 created_at: payload.created_at || new Date().toISOString()
             };
 
-            const savedReport = await saveFaultReport(report);
+            const savedReport = await saveFault(report);
             res.status(201).json(savedReport);
         } catch (error) {
             res.status(500).json({ message: error.message });
